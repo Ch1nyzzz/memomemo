@@ -1,0 +1,122 @@
+\documentclass{article}
+
+% if you need to pass options to natbib, use, e.g.:
+%     \PassOptionsToPackage{numbers, compress}{natbib}
+% before loading neurips_2026
+
+% The authors should use one of these tracks.
+% Before accepting by the NeurIPS conference, select one of the options below.
+% 0. "default" for submission
+\usepackage{neurips_2026}
+% the "default" option is equal to the "main" option, which is used for the Main Track with double-blind reviewing.
+% 1. "main" option is used for the Main Track
+%  \usepackage[main]{neurips_2026}
+% 2. "position" option is used for the Position Paper Track
+%  \usepackage[position]{neurips_2026}
+% 3. "eandd" option is used for the Evaluations & Datasets Track
+ % \usepackage[eandd]{neurips_2026}
+ % if you want to opt-in for a de-anomymized submission (not recommended, but OK):
+ %\usepackage[eandd, nonanonymous]{neurips_2026}
+% 4. "creativeai" option is used for the Creative AI Track
+%  \usepackage[creativeai]{neurips_2026}
+% 5. "sglblindworkshop" option is used for the Workshop with single-blind reviewing
+ % \usepackage[sglblindworkshop]{neurips_2026}
+% 6. "dblblindworkshop" option is used for the Workshop with double-blind reviewing
+%  \usepackage[dblblindworkshop]{neurips_2026}
+
+% After being accepted, the authors should add "final" behind the track to compile a camera-ready version.
+% 1. Main Track
+ % \usepackage[main, final]{neurips_2026}
+% 2. Position Paper Track
+%  \usepackage[position, final]{neurips_2026}
+% 3. Evaluations & Datasets Track
+ % \usepackage[eandd, final]{neurips_2026}
+% 4. Creative AI Track
+%  \usepackage[creativeai, final]{neurips_2026}
+% 5. Workshop with single-blind reviewing
+%  \usepackage[sglblindworkshop, final]{neurips_2026}
+% 6. Workshop with double-blind reviewing
+%  \usepackage[dblblindworkshop, final]{neurips_2026}
+
+% "preprint" option is used for arXiv or other preprint submissions
+ % \usepackage[preprint]{neurips_2026}
+
+% to avoid loading the natbib package, add option nonatbib:
+%    \usepackage[nonatbib]{neurips_2026}
+
+\usepackage[utf8]{inputenc} % allow utf-8 input
+\usepackage[T1]{fontenc}    % use 8-bit T1 fonts
+\usepackage{hyperref}       % hyperlinks
+\usepackage{url}            % simple URL typesetting
+\usepackage{booktabs}       % professional-quality tables
+\usepackage{amsfonts}       % blackboard math symbols
+\usepackage{nicefrac}       % compact symbols for 1/2, etc.
+\usepackage{microtype}      % microtypography
+\usepackage{xcolor}         % colors
+
+\title{Optimization Harness: Curating Agents' Attention}
+
+
+\author{%
+  Anonymous Author(s) \\
+  Affiliation \\
+  Address \\
+  \texttt{email} \\
+}
+
+
+\begin{document}
+
+
+\maketitle
+
+
+\begin{abstract}
+We introduce \textbf{Optimization Harness}, a framework that turns general-purpose coding agents (Claude Code, Codex GPT-5.4) into optimizers for LLM agent scaffolds via a propose--evaluate loop. When a coding agent is repeatedly invoked as a proposer, raw context capacity is rarely the limiting factor; what matters more is \emph{which} prior iterations it re-reads, \emph{which} files in the workspace it attends to first, and \emph{which} mechanism axes it is told to consider. Optimization Harness curates this attention along five complementary axes: (i) a \textbf{Docker file-scope sandbox} confining the proposer to optimization-relevant files; (ii) an \textbf{Optimization Focus} block injecting four to five mechanism-level directions into the prompt each iteration; (iii) \textbf{reference iteration roles} that explicitly label prior best- and worst-scoring iterations; (iv) a \textbf{progressive} policy whose budget state machine escalates context (\texttt{low}\,$\to$\,\texttt{medium}\,$\to$\,\texttt{high}) only after a Pareto-frontier stall; and (v) a \textbf{bandit} policy that scores every readable file with a rolling $z$-scored passrate reward, UCB exploration, and a Beta-smoothed prior, pinning the highest-utility files into a ``hot'' workspace. Counter-intuitively, narrower attention does not always reduce the number of files the proposer reads (in several configurations it reads \emph{more}), yet consistently improves optimization. Our central empirical claim is that the two adaptive policies' \emph{gradual context disclosure} outperforms both the fixed-high-context default \emph{and} a fixed-low ablation in most settings. Across LoCoMo (memory-augmented multi-turn QA), LongMemEval (long-memory QA), and SWE-bench Verified (optimized on a 30-task training subset, evaluated on the full 500-task verified split): on LoCoMo with Claude Code, progressive reaches \textbf{0.3734} test passrate (vs.\ 0.3540 force-low, 0.3382 default), and bandit reaches 0.3589 (vs.\ 0.3409 force-low, 0.3382 default); on LongMemEval with Claude Code, progressive reaches \textbf{0.5000} (vs.\ 0.4675 force-low, 0.4700 default); on LoCoMo with Codex GPT-5.4, bandit takes the proposer-family best at \textbf{0.3865} while using roughly $2\times$ less proposer input than progressive (1.13M vs.\ 2.39M tokens/iter); and the bandit-discovered scaffold raises SWE-bench Verified from a 0.4400 source baseline to \textbf{0.6400} on the full 500-task split (+20.0\,pp). The one informative exception we report is bandit at fixed-low budget reaching a benchmark-best \textbf{0.5225} on LongMemEval, isolating the bandit's per-file UCB prior---rather than budget escalation---as the LongMemEval driver. Across 48 score-improvement events spanning ten retained runs, 35 occur at \texttt{low} or \texttt{medium} budget, supporting our central claim: \emph{curating} a coding-agent optimizer's attention beats giving it more.
+\end{abstract}
+
+
+\section{Introduction}
+\label{sec:intro}
+
+
+\section{Related Work}
+\label{sec:related}
+
+
+\section{Method}
+\label{sec:method}
+
+
+\section{Experiments}
+\label{sec:experiments}
+
+
+\section{Discussion and Limitations}
+\label{sec:discussion}
+
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+
+\begin{ack}
+\end{ack}
+
+
+\section*{References}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\appendix
+
+\section{Technical appendices and supplementary material}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\newpage
+\input{checklist.tex}
+
+
+\end{document}
