@@ -72,7 +72,30 @@
 
 
 \begin{abstract}
-We introduce \textbf{Optimization Harness}, a framework that turns general-purpose coding agents (Claude Code, Codex GPT-5.4) into optimizers for LLM agent scaffolds via a propose--evaluate loop. When a coding agent is repeatedly invoked as a proposer, raw context capacity is rarely the limiting factor; what matters more is \emph{which} prior iterations it re-reads, \emph{which} files in the workspace it attends to first, and \emph{which} mechanism axes it is told to consider. Optimization Harness curates this attention along five complementary axes: (i) a \textbf{Docker file-scope sandbox} confining the proposer to optimization-relevant files; (ii) an \textbf{Optimization Focus} block injecting four to five mechanism-level directions into the prompt each iteration; (iii) \textbf{reference iteration roles} that explicitly label prior best- and worst-scoring iterations; (iv) a \textbf{progressive} policy whose budget state machine escalates context (\texttt{low}\,$\to$\,\texttt{medium}\,$\to$\,\texttt{high}) only after a Pareto-frontier stall; and (v) a \textbf{bandit} policy that scores every readable file with a rolling $z$-scored passrate reward, UCB exploration, and a Beta-smoothed prior, pinning the highest-utility files into a ``hot'' workspace. Counter-intuitively, narrower attention does not always reduce the number of files the proposer reads (in several configurations it reads \emph{more}), yet consistently improves optimization. Our central empirical claim is that the two adaptive policies' \emph{gradual context disclosure} outperforms both the fixed-high-context default \emph{and} a fixed-low ablation in most settings. Across LoCoMo (memory-augmented multi-turn QA), LongMemEval (long-memory QA), and SWE-bench Verified (optimized on a 30-task training subset, evaluated on the full 500-task verified split): on LoCoMo with Claude Code, progressive reaches \textbf{0.3734} test passrate (vs.\ 0.3540 force-low, 0.3382 default), and bandit reaches 0.3589 (vs.\ 0.3409 force-low, 0.3382 default); on LongMemEval with Claude Code, progressive reaches \textbf{0.5000} (vs.\ 0.4675 force-low, 0.4700 default); on LoCoMo with Codex GPT-5.4, bandit takes the proposer-family best at \textbf{0.3865} while using roughly $2\times$ less proposer input than progressive (1.13M vs.\ 2.39M tokens/iter); and the bandit-discovered scaffold raises SWE-bench Verified from a 0.4400 source baseline to \textbf{0.6400} on the full 500-task split (+20.0\,pp). The one informative exception we report is bandit at fixed-low budget reaching a benchmark-best \textbf{0.5225} on LongMemEval, isolating the bandit's per-file UCB prior---rather than budget escalation---as the LongMemEval driver. Across 48 score-improvement events spanning ten retained runs, 35 occur at \texttt{low} or \texttt{medium} budget, supporting our central claim: \emph{curating} a coding-agent optimizer's attention beats giving it more.
+Recent work has shown that coding agents can optimize LLM agent scaffolds
+through a propose--evaluate loop, but leaves the proposer's attention
+unmanaged: every iteration sees the full file tree and complete execution
+history with no explicit optimization direction.  We present Optimization
+Harness, a modular framework that curates the proposer's context and
+guides which mechanism axes it explores.  The framework provides Docker
+file-scope sandboxing, mechanism-level optimization-focus prompts, and
+labeled best/worst reference iterations, enabling two adaptive
+context-selection policies.  The progressive policy runs a budget state
+machine (\texttt{low}$\,\to\,$\texttt{medium}$\,\to\,$\texttt{high})
+that escalates only after a Pareto-frontier stall and resets on every
+improvement; the bandit policy scores every readable file with a
+per-file UCB scorer, rolling $z$-score reward, and Beta-smoothed prior,
+concentrating high-utility files in a hot workspace each iteration.
+Across three benchmarks and two proposer families, gradual context
+disclosure consistently outperforms both fixed-high and fixed-low
+baselines: on LoCoMo the adaptive policies improve test passrate by up
+to +5\,pp; on LongMemEval progressive reaches 0.500 (+3\,pp); a
+bandit-discovered scaffold raises SWE-bench Verified from 0.44 to 0.64
+(+20\,pp) on the full 500-task split; and on Codex GPT-5.4 the bandit
+halves proposer-input cost with no test regression. Of 48 score-improvement events across ten runs, 35 occur at \texttt{low} or
+\texttt{medium} budget, and the per-opportunity breakthrough rate at
+\texttt{high} does not exceed that of the lower tiers---curating what an
+optimizer attends to beats giving it more context.
 \end{abstract}
 
 
