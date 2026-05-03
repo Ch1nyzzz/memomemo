@@ -28,24 +28,18 @@ We share this latter intuition: a coding agent's chain-of-thought
 navigate large workspaces makes it a natural proposer. Building on this
 foundation, we observe that the proposer's effectiveness can be further
 improved by actively managing which files it attends to. As harnesses
-grow in complexity---often spanning dozens of source files, configuration
-schemas, and diagnostic logs---we identify three opportunities where
-curated context outperforms unrestricted access:
-\begin{enumerate}
-    \item \textbf{Attention focus.} Restricting the visible workspace to
-    high-relevance files concentrates the proposer's attention on the
-    current optimization frontier, reducing distraction from low-utility
-    files.
-    \item \textbf{Directed exploration.} Explicit mechanism-level
-    guidance steers the proposer toward structurally distinct alternatives
-    (e.g., retrieval re-ranking, memory consolidation) rather than
-    repeatedly revisiting familiar axes such as prompt wording.
-    \item \textbf{Optimization direction.} A narrower, curated view
-    sharpens the proposer's search gradient---analogous to how
-    CODEFILTER~\cite{li2025codefilter} shows that filtering retrieved
-    context to only positive-impact chunks improves code completion over
-    providing all retrieved files.
-\end{enumerate}
+grow in complexity, often spanning dozens of source files, configuration
+schemas, and diagnostic logs, unrestricted file access can dilute the
+proposer's \textbf{attention} and diffuse its \textbf{optimization
+direction}: restricting the visible workspace to high-relevance files
+concentrates the proposer on the current optimization frontier and
+sharpens its search gradient, analogous to how
+CODEFILTER~\cite{li2025codefilter} shows that filtering retrieved context
+to only positive-impact chunks improves code completion over providing all
+retrieved files. Complementarily, explicit mechanism-level guidance enables
+\textbf{directed exploration}, steering the proposer toward structurally
+distinct alternatives (e.g., retrieval re-ranking, memory consolidation)
+rather than repeatedly revisiting familiar axes such as prompt wording.
 
 Our key insight is that \emph{optimizer attention should be managed the same
 way a skilled developer manages their own}: start with a focused view that
@@ -84,8 +78,9 @@ itself---yielding up to +20\,pp gains without changing the underlying
 proposer model. Our contributions are:
 \begin{enumerate}
     \item We formalize the problem of \emph{proposer context management}
-    in harness optimization and identify three axes along which curated
-    context improves over unrestricted access.
+    in harness optimization and show that curating the proposer's file
+    access improves attention focus, optimization direction, and
+    exploration diversity.
     \item We introduce Optimization Harness, a modular framework with
     Docker sandboxing, mechanism-focus prompts, and reference labeling
     that enables pluggable context-selection policies.
