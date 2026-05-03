@@ -479,7 +479,7 @@ policy) optimization row):
 | default optimized (`iter002_stack_trace_context`)                       | 229 / 500    | 0.4580      |
 | progressive optimized (`iter016_final_fallback_traceback_retrieval_v1`) | 310 / 500    | 0.6200      |
 | bandit fixedsource optimized (`iter013_impact_aware_feedback`)          | 320 / 500    | **0.6400**  |
-| default+direction optimized (`iter020_patch_integrity_validator`, DeepSeek) | 313 / 500 | 0.6260   |
+| default+direction optimized (`iter020_patch_integrity_validator`, DeepSeek) | 305 / 500 | 0.6100   |
 
 The bandit fixedsource `iter013_impact_aware_feedback` candidate beats the
 source baseline by +20.0 percentage points on full verified, and is still
