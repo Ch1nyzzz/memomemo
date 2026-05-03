@@ -23,28 +23,29 @@ native browsing and reasoning already constitute an effective search
 gradient. This intuition is sound: a coding agent's chain-of-thought
 \emph{is} the optimization gradient, and its ability to autonomously
 navigate large workspaces makes it a natural proposer. Yet even powerful
-proposers benefit from active management of which files they attend to.
-As harnesses grow in complexity, unrestricted file access can dilute the
-proposer's \textbf{attention} and diffuse its \textbf{optimization
-direction}, analogous to how CODEFILTER~\cite{li2025codefilter} shows
-that filtering retrieved context to only positive-impact chunks improves
-code completion over providing all retrieved files. Explicit
-mechanism-level guidance further enables \textbf{directed exploration},
-steering the proposer toward structurally distinct alternatives rather
-than repeatedly revisiting familiar axes such as prompt wording.
+proposers benefit from active management of \emph{which prior
+iterations and which workspace files} they attend to. As harnesses grow
+in complexity, unrestricted access dilutes the proposer's
+\textbf{attention}, analogous to how CODEFILTER~\cite{li2025codefilter}
+shows that filtering retrieved context to only positive-impact chunks
+improves code completion over providing all retrieved files. Equally,
+unrestricted browsing of past iterations buries the small subset that
+carries the strongest learning signal in a long tail of near-duplicate
+or stale candidates.
 
-This paper introduces \textbf{Optimization Harness}, a modular framework
-that wraps any propose--evaluate loop with three capabilities:
-(i)~Docker file-scope sandboxing that restricts the proposer to a
-curated workspace, (ii)~mechanism-level optimization-focus prompts that
-steer exploration along named axes, and (iii)~labeled best/worst
-reference iterations that provide imitation targets and anti-patterns.
-Two adaptive context-selection policies build on this framework: a
-\emph{progressive} policy that escalates a budget state machine
+This paper introduces two adaptive \emph{context-selection policies}
+that curate, at each iteration, what the proposer attends to along two
+orthogonal axes: a \emph{progressive} policy that controls
+\textbf{which prior iterations} are surfaced---escalating a budget
+state machine
 (\texttt{low}$\,\to\,$\texttt{medium}$\,\to\,$\texttt{high}) only after
-a Pareto-frontier stall, and a \emph{bandit} policy that scores each
-workspace file with a per-file UCB scorer and concentrates high-utility
-files in a curated ``hot workspace'' each iteration.
+a Pareto-frontier stall---and a \emph{bandit} policy that controls
+\textbf{which workspace files} are surfaced---scoring each file with a
+per-file UCB scorer and concentrating high-utility files in a curated
+``hot workspace'' each iteration. Both plug into a shared
+propose--evaluate loop with role-labeled best/worst reference
+iterations, and contrast with the fixed-context default that exposes
+the full file tree and complete history every iteration.
 
 Across three benchmarks (LoCoMo, LongMemEval, SWE-bench Verified) and
 two proposer families (Claude Code with Kimi K2.6, and Codex GPT-5.4),
@@ -57,14 +58,18 @@ at \texttt{low} or \texttt{medium} budget, confirming that
 lever to improving the optimizer itself. Our contributions are:
 \begin{enumerate}
     \item We formalize \emph{proposer context management} in harness
-    optimization and show that curating file access improves attention
-    focus, optimization direction, and exploration diversity.
-    \item We introduce Optimization Harness, a modular framework with
-    Docker sandboxing, mechanism-focus prompts, and reference labeling
-    that enables pluggable context-selection policies.
-    \item We propose two adaptive policies (progressive and bandit) and
-    evaluate them on three benchmarks with two proposer families,
-    demonstrating consistent improvements over the fixed-high baseline.
+    optimization along two axes---\textbf{which prior iterations} and
+    \textbf{which workspace files} the proposer attends to---and show
+    that curating both improves attention focus over fixed-context
+    baselines.
+    \item We propose two adaptive policies that operationalize these
+    axes: a progressive policy that escalates an iteration-context
+    budget only after a Pareto-frontier stall, and a bandit policy
+    that scores workspace files with a per-file UCB scorer and feeds a
+    rolling $z$-score reward back into utility estimates.
+    \item We evaluate both policies on three benchmarks with two
+    proposer families, demonstrating consistent improvements over the
+    fixed-high baseline.
     \item We provide an empirical analysis of where breakthroughs occur
     across budget tiers, showing that curating attention is more
     efficient per opportunity than maximizing context.

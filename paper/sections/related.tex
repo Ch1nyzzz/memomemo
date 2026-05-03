@@ -18,11 +18,13 @@ files in place, using its chain-of-thought as the implicit search gradient.
 ACE~\cite{zhang2025ace} takes a complementary view, evolving the agent's
 \emph{context}---system prompts and memory playbooks---through generation,
 reflection, and curation stages rather than modifying harness code.
-All of these systems leave the proposer's \emph{attention} unmanaged: the
-proposer either sees a fixed context or the entire workspace. Our work
-introduces a previously unaddressed dimension---adaptive context-selection
-policies that curate \emph{which files} the proposer attends to at each
-iteration, actively managing attention as a first-class optimization lever.
+All of these systems leave the proposer's \emph{attention} unmanaged:
+the proposer either sees a fixed context or the entire workspace. Our
+work introduces a previously unaddressed dimension---adaptive
+context-selection policies that curate, at each iteration, both
+\emph{which prior iterations} and \emph{which workspace files} the
+proposer attends to, actively managing attention as a first-class
+optimization lever.
 
 \paragraph{Evolutionary code search.}
 LLM-driven evolutionary algorithms demonstrate that language models can
@@ -56,9 +58,12 @@ Orthogonally, Nie et al.~\cite{nie2026learningloop} systematically study
 design decisions within iterative generative optimization---initialization,
 credit horizon, and experience batching---finding that these choices are
 task-dependent and rarely made explicit. Our progressive and bandit policies
-operationalize both insights: they manage \emph{which source files} the
-proposer sees (file-level curation) as a first-class loop design decision,
-starting narrow and escalating only when justified by stall detection.
+operationalize both insights along two complementary axes: progressive
+manages \emph{which prior iterations} are surfaced (iteration-level
+curation), while bandit manages \emph{which workspace files} are
+surfaced (file-level curation). Both treat curation as a first-class
+loop design decision, starting narrow and escalating only when
+justified by stall detection.
 
 \paragraph{LLM agents as optimization targets and technical foundations.}
 Modern LLM agents---MemGPT~\cite{packer2023memgpt} with virtual memory
