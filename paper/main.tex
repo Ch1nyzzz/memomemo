@@ -73,29 +73,38 @@
 
 \begin{abstract}
 Recent work has shown that coding agents can optimize LLM agent scaffolds
-through a propose--evaluate loop, but leaves the proposer's attention
+through a propose-evaluate loop, but leaves the proposer's attention
 unmanaged: every iteration sees the full file tree and complete execution
-history with no explicit optimization direction.  We present Optimization
+history with no explicit optimization direction. We present Optimization
 Harness, a modular framework that curates the proposer's context and
-guides which mechanism axes it explores.  The framework provides Docker
+guides which mechanism axes it explores. The framework provides Docker
 file-scope sandboxing, mechanism-level optimization-focus prompts, and
 labeled best/worst reference iterations, enabling two adaptive
-context-selection policies.  The progressive policy runs a budget state
+context-selection policies. The progressive policy runs a budget state
 machine (\texttt{low}$\,\to\,$\texttt{medium}$\,\to\,$\texttt{high})
 that escalates only after a Pareto-frontier stall and resets on every
-improvement; the bandit policy scores every readable file with a
-per-file UCB scorer, rolling $z$-score reward, and Beta-smoothed prior,
-concentrating high-utility files in a hot workspace each iteration.
-Across three benchmarks and two proposer families, gradual context
-disclosure consistently outperforms both fixed-high and fixed-low
-baselines: on LoCoMo the adaptive policies improve test passrate by up
-to +5\,pp; on LongMemEval progressive reaches 0.500 (+3\,pp); a
-bandit-discovered scaffold raises SWE-bench Verified from 0.44 to 0.64
-(+20\,pp) on the full 500-task split; and on Codex GPT-5.4 the bandit
-halves proposer-input cost with no test regression. Of 48 score-improvement events across ten runs, 35 occur at \texttt{low} or
-\texttt{medium} budget, and the per-opportunity breakthrough rate at
-\texttt{high} does not exceed that of the lower tiers---curating what an
-optimizer attends to beats giving it more context.
+improvement. The bandit policy is a more aggressive recommendation-driven
+variant that scores every readable file with a per-file UCB scorer,
+rolling $z$-score reward, and Beta-smoothed prior, concentrating
+high-utility files in a hot workspace each iteration. Across three
+benchmarks (LoCoMo, LongMemEval, SWE-bench Verified) and two proposer
+families (Claude Code calling Kimi K2.6, and Codex GPT-5.4), our
+progressive policy beats the fixed-high default in five of six
+(benchmark, proposer) cells, with LongMemEval on Codex GPT-5.4 the only
+cell where default is not surpassed. The strongest result comes from the
+bandit's optimized scaffold on SWE-bench Verified, which lifts the full
+500-task split from 0.44 to 0.64 (+20\,pp). The bandit reaches the
+cell-best passrate in 2 of the 6 cells (also LoCoMo with Codex GPT-5.4
+at 0.39) and ties progressive in a third (SWE-bench mini train30), but
+regresses against default on both LongMemEval cells, exposing a failure
+mode for direct file-utility recommendation on long-memory retrieval
+tasks. Across the
+ten adaptive runs, 35 of 48 training-time score-improvement events
+occur at \texttt{low} or \texttt{medium} budget, and after warm-up the
+per-opportunity breakthrough rate at \texttt{high} (9\%) does not
+exceed that of \texttt{low} (11\%) or \texttt{medium} (11\%),
+supporting our central claim that curating what an optimizer attends to
+beats giving it more context.
 \end{abstract}
 
 
