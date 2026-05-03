@@ -23,13 +23,16 @@ arguing that a capable agent's native browsing and reasoning already
 constitute an effective search gradient---more information enables better
 optimization.
 
-We share this latter intuition. A coding agent's chain-of-thought
-\emph{is} the optimization gradient; its ability to autonomously navigate
-large workspaces makes it a natural proposer. Yet we observe that even
-powerful proposers exhibit systematic inefficiencies when their attention
-is left entirely unmanaged. As harnesses grow in complexity---often spanning
-dozens of source files, configuration schemas, and diagnostic
-logs---unmanaged attention leads to three failure modes:
+We share this latter intuition: a coding agent's chain-of-thought
+\emph{is} the optimization gradient, and its ability to autonomously
+navigate large workspaces makes it a natural proposer. However, more
+information does not unconditionally yield better optimization. In
+practice, we find that even powerful proposers exhibit systematic
+inefficiencies when their attention is left entirely unmanaged---the
+agent's native browsing ability is necessary but not sufficient. As
+harnesses grow in complexity---often spanning dozens of source files,
+configuration schemas, and diagnostic logs---unmanaged attention leads to
+three failure modes:
 \begin{enumerate}
     \item \textbf{Context dilution.} The proposer's limited attention
     window is consumed by low-utility files, leaving less capacity for
@@ -47,30 +50,21 @@ logs---unmanaged attention leads to three failure modes:
 Our key insight is that \emph{optimizer attention should be managed the same
 way a skilled developer manages their own}: start with a focused view that
 covers only the most relevant files and the strongest reference points, then
-broaden context only when the narrow view stalls. This principle---curating
-what the optimizer attends to rather than giving it more---motivates
+broaden context only when the narrow view stalls. We introduce
 \textbf{Optimization Harness}, a modular framework that wraps any
 propose--evaluate loop with three capabilities: (i)~Docker file-scope
 sandboxing that restricts the proposer to a curated workspace,
 (ii)~mechanism-level optimization-focus prompts that steer exploration along
 named axes, and (iii)~labeled best/worst reference iterations that provide
-imitation targets and anti-patterns.
-
-Building on this framework, we introduce two adaptive context-selection
-policies:
-\begin{itemize}
-    \item \textbf{Progressive}: a budget state machine
-    (\texttt{low}$\,\to\,$\texttt{medium}$\,\to\,$\texttt{high}) that
-    escalates only after a Pareto-frontier stall and resets to \texttt{low}
-    on every improvement, minimizing the average per-iteration cost while
-    preserving the option to access full context when needed.
-    \item \textbf{Bandit}: a recommendation-driven variant that models
-    each workspace file as a multi-armed bandit arm, scoring files with a
-    per-file UCB scorer, rolling $z$-score reward, and Beta-smoothed prior.
-    High-utility files are concentrated in a ``hot workspace'' each
-    iteration, giving the proposer a curated view that adapts based on
-    which files historically correlate with score improvements.
-\end{itemize}
+imitation targets and anti-patterns. Building on this framework, we propose
+two adaptive context-selection policies: a \emph{progressive} policy that
+runs a budget state machine
+(\texttt{low}$\,\to\,$\texttt{medium}$\,\to\,$\texttt{high}), escalating
+only after a Pareto-frontier stall and resetting on every improvement; and
+a \emph{bandit} policy that models each workspace file as a multi-armed
+bandit arm with a per-file UCB scorer and Beta-smoothed prior,
+concentrating high-utility files in a curated ``hot workspace'' each
+iteration.
 
 We evaluate Optimization Harness across three benchmarks spanning
 conversational memory (LoCoMo), long-context retrieval (LongMemEval), and
@@ -84,7 +78,10 @@ at \texttt{low} or \texttt{medium} budget, and after warm-up the
 per-opportunity breakthrough rate at \texttt{high} (9\%) does not exceed
 that of \texttt{low} (11\%) or \texttt{medium} (11\%).
 
-Our contributions are:
+These results demonstrate that \emph{managing what the optimizer sees} is
+a complementary and effective lever to improving the optimizer
+itself---yielding up to +20\,pp gains without changing the underlying
+proposer model. Our contributions are:
 \begin{enumerate}
     \item We formalize the problem of \emph{proposer context management}
     in harness optimization and identify three failure modes of the
