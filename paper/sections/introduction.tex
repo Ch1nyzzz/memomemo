@@ -4,21 +4,32 @@
 Large language model (LLM) agents are increasingly deployed as autonomous
 software engineers~\cite{jimenez2024swebench,yang2024sweagent}, long-context
 assistants~\cite{wu2024longmemeval}, and conversational
-companions~\cite{maharana2024locomo}. The \emph{scaffold}---the surrounding
-code that orchestrates an agent's memory, retrieval, and tool use---largely
-determines task performance, yet scaffold design has traditionally required
-manual engineering. Recent work demonstrates that a second LLM (the
-\emph{proposer}) can iteratively improve a scaffold through a
-propose--evaluate loop, treating scaffold optimization as a search
-problem~\cite{hu2024adas,lee2026metaharness,khattab2023dspy}.
+companions~\cite{maharana2024locomo}. Their effectiveness is largely
+determined by \emph{harness engineering}---the design of the surrounding
+code that orchestrates memory, retrieval, prompt routing, and tool
+use~\cite{lee2026metaharness}. Automating this design through
+propose--evaluate loops, where a second LLM (the \emph{proposer})
+iteratively improves the harness, has emerged as a promising
+paradigm~\cite{hu2024adas,khattab2023dspy}.
 
-However, existing propose--evaluate systems leave the proposer's attention
-entirely unmanaged. Each iteration presents the full workspace file tree,
-the complete execution history, and no explicit signal about \emph{which
-mechanism axis} (e.g., retrieval strategy, context window, re-ranking) to
-explore next. As scaffolds grow in complexity---often spanning dozens of
-source files, configuration schemas, and diagnostic logs---this
-``attention-agnostic'' design leads to three failure modes:
+Existing approaches span a spectrum of information exposure. At one end,
+systems like ACE~\cite{zhang2025ace} and
+OpenEvolve~\cite{sharma2025openevolve} compress iteration history into
+summaries or curated playbooks, feeding the proposer a lossy but compact
+view. At the other end, Meta-Harness~\cite{lee2026metaharness} takes the
+opposite stance: it deploys a coding agent (Claude Code) as the proposer
+with full filesystem access to all prior candidates, scores, and traces,
+arguing that a capable agent's native browsing and reasoning already
+constitute an effective search gradient---more information enables better
+optimization.
+
+We share this latter intuition. A coding agent's chain-of-thought
+\emph{is} the optimization gradient; its ability to autonomously navigate
+large workspaces makes it a natural proposer. Yet we observe that even
+powerful proposers exhibit systematic inefficiencies when their attention
+is left entirely unmanaged. As harnesses grow in complexity---often spanning
+dozens of source files, configuration schemas, and diagnostic
+logs---unmanaged attention leads to three failure modes:
 \begin{enumerate}
     \item \textbf{Context dilution.} The proposer's limited attention
     window is consumed by low-utility files, leaving less capacity for
@@ -76,7 +87,7 @@ that of \texttt{low} (11\%) or \texttt{medium} (11\%).
 Our contributions are:
 \begin{enumerate}
     \item We formalize the problem of \emph{proposer context management}
-    in scaffold optimization and identify three failure modes of the
+    in harness optimization and identify three failure modes of the
     attention-agnostic default.
     \item We introduce Optimization Harness, a modular framework with
     Docker sandboxing, mechanism-focus prompts, and reference labeling

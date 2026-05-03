@@ -72,7 +72,7 @@
 
 
 \begin{abstract}
-Recent work has shown that coding agents can optimize LLM agent scaffolds
+Recent work has shown that coding agents can optimize LLM agent harnesses
 through a propose-evaluate loop, but leaves the proposer's attention
 unmanaged: every iteration sees the full file tree and complete execution
 history with no explicit optimization direction. We present Optimization
@@ -92,7 +92,7 @@ families (Claude Code calling Kimi K2.6, and Codex GPT-5.4), our
 progressive policy beats the fixed-high default in five of six
 (benchmark, proposer) cells, with LongMemEval on Codex GPT-5.4 the only
 cell where default is not surpassed. The strongest result comes from the
-bandit's optimized scaffold on SWE-bench Verified, which lifts the full
+bandit's optimized harness on SWE-bench Verified, which lifts the full
 500-task split from 0.44 to 0.64 (+20\,pp). The bandit reaches the
 cell-best passrate in 2 of the 6 cells (also LoCoMo with Codex GPT-5.4
 at 0.39) and ties progressive in a third (SWE-bench mini train30), but
