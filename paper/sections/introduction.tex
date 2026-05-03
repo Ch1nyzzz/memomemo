@@ -25,26 +25,26 @@ optimization.
 
 We share this latter intuition: a coding agent's chain-of-thought
 \emph{is} the optimization gradient, and its ability to autonomously
-navigate large workspaces makes it a natural proposer. However, more
-information does not unconditionally yield better optimization. In
-practice, we find that even powerful proposers exhibit systematic
-inefficiencies when their attention is left entirely unmanaged---the
-agent's native browsing ability is necessary but not sufficient. As
-harnesses grow in complexity---often spanning dozens of source files,
-configuration schemas, and diagnostic logs---unmanaged attention leads to
-three failure modes:
+navigate large workspaces makes it a natural proposer. Building on this
+foundation, we observe that the proposer's effectiveness can be further
+improved by actively managing which files it attends to. As harnesses
+grow in complexity---often spanning dozens of source files, configuration
+schemas, and diagnostic logs---we identify three opportunities where
+curated context outperforms unrestricted access:
 \begin{enumerate}
-    \item \textbf{Context dilution.} The proposer's limited attention
-    window is consumed by low-utility files, leaving less capacity for
-    the files that actually matter for the current optimization frontier.
-    \item \textbf{Undirected exploration.} Without explicit mechanism-level
-    guidance, the proposer tends to revisit familiar axes (e.g., prompt
-    wording) rather than exploring structurally distinct alternatives
-    (e.g., retrieval re-ranking or memory consolidation).
-    \item \textbf{Cost inefficiency.} Every iteration pays the full
-    token cost of the longest context, even when narrower context would
-    suffice---a problem compounded by the iterative nature of the loop,
-    where 20--30 iterations are typical.
+    \item \textbf{Attention focus.} Restricting the visible workspace to
+    high-relevance files concentrates the proposer's attention on the
+    current optimization frontier, reducing distraction from low-utility
+    files.
+    \item \textbf{Directed exploration.} Explicit mechanism-level
+    guidance steers the proposer toward structurally distinct alternatives
+    (e.g., retrieval re-ranking, memory consolidation) rather than
+    repeatedly revisiting familiar axes such as prompt wording.
+    \item \textbf{Optimization direction.} A narrower, curated view
+    sharpens the proposer's search gradient---analogous to how
+    CODEFILTER~\cite{li2025codefilter} shows that filtering retrieved
+    context to only positive-impact chunks improves code completion over
+    providing all retrieved files.
 \end{enumerate}
 
 Our key insight is that \emph{optimizer attention should be managed the same
@@ -84,8 +84,8 @@ itself---yielding up to +20\,pp gains without changing the underlying
 proposer model. Our contributions are:
 \begin{enumerate}
     \item We formalize the problem of \emph{proposer context management}
-    in harness optimization and identify three failure modes of the
-    attention-agnostic default.
+    in harness optimization and identify three axes along which curated
+    context improves over unrestricted access.
     \item We introduce Optimization Harness, a modular framework with
     Docker sandboxing, mechanism-focus prompts, and reference labeling
     that enables pluggable context-selection policies.

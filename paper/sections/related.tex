@@ -54,16 +54,34 @@ These systems are \emph{targets} of harness optimization---our benchmarks
 evaluate optimized versions of MemGPT-style memory harnesses (LoCoMo,
 LongMemEval) and SWE-agent-style coding harnesses (SWE-bench Verified).
 
-\paragraph{Context utilization in long-context LLMs.}
+\paragraph{Context curation and utilization.}
 Liu et al.~\cite{liu2024lost} show that language models disproportionately
 attend to information at the beginning and end of their context window,
-with retrieval accuracy degrading for facts placed in the middle. This
-``lost-in-the-middle'' phenomenon motivates our progressive policy: by
-starting with a narrow context (only the most relevant files and reference
-iterations), we ensure that critical information occupies the positions
-where the proposer LLM is most likely to attend to it. The bandit policy
-addresses the same problem from a different angle, explicitly scoring files
-by historical utility and concentrating high-value files in the prompt.
+with retrieval accuracy degrading for facts placed in the middle.
+CODEFILTER~\cite{li2025codefilter} demonstrates a complementary finding
+in code completion: only 15\% of retrieved cross-file chunks positively
+contribute to completion quality, while 5.6\% actively degrade
+performance---filtering to positive-impact chunks consistently outperforms
+providing all retrieved context. These results support a common principle:
+curating what a model attends to can be more effective than maximizing
+the information available to it. Our progressive policy operationalizes
+this for optimization loops by starting with a narrow context that places
+critical files where the proposer is most likely to attend, while the
+bandit policy scores files by historical utility and concentrates
+high-value files in each iteration's prompt.
+
+\paragraph{Learning loop design.}
+Nie et al.~\cite{nie2026learningloop} systematically study the design
+decisions underlying iterative generative optimization, identifying three
+factors that critically affect loop performance: the \emph{starting
+artifact} (initialization), the \emph{credit horizon} (how many execution
+steps to include as feedback), and \emph{experience batching} (how many
+trials to present per update). Their finding that these choices are
+task-dependent and rarely made explicit in prior work motivates a
+principled approach to loop configuration. Our work addresses an
+orthogonal but complementary axis: rather than what feedback to show the
+proposer, we manage \emph{which source files} it sees, treating
+file-level attention as a first-class design decision within the loop.
 
 \paragraph{Multi-armed bandits for resource allocation.}
 Our bandit policy builds on the UCB1 algorithm~\cite{auer2002ucb}, which
