@@ -1,0 +1,91 @@
+\section{Introduction}
+\label{sec:intro}
+
+Large language model (LLM) agents are increasingly deployed as autonomous
+software engineers~\cite{jimenez2024swebench,yang2024sweagent}, long-context
+assistants~\cite{wu2024longmemeval}, and conversational
+companions~\cite{maharana2024locomo}. The \emph{scaffold}---the surrounding
+code that orchestrates an agent's memory, retrieval, and tool use---largely
+determines task performance, yet scaffold design has traditionally required
+manual engineering. Recent work demonstrates that a second LLM (the
+\emph{proposer}) can iteratively improve a scaffold through a
+propose--evaluate loop, treating scaffold optimization as a search
+problem~\cite{hu2024adas,lee2026metaharness,khattab2023dspy}.
+
+However, existing propose--evaluate systems leave the proposer's attention
+entirely unmanaged. Each iteration presents the full workspace file tree,
+the complete execution history, and no explicit signal about \emph{which
+mechanism axis} (e.g., retrieval strategy, context window, re-ranking) to
+explore next. As scaffolds grow in complexity---often spanning dozens of
+source files, configuration schemas, and diagnostic logs---this
+``attention-agnostic'' design leads to three failure modes:
+\begin{enumerate}
+    \item \textbf{Context dilution.} The proposer's limited attention
+    window is consumed by low-utility files, leaving less capacity for
+    the files that actually matter for the current optimization frontier.
+    \item \textbf{Undirected exploration.} Without explicit mechanism-level
+    guidance, the proposer tends to revisit familiar axes (e.g., prompt
+    wording) rather than exploring structurally distinct alternatives
+    (e.g., retrieval re-ranking or memory consolidation).
+    \item \textbf{Cost inefficiency.} Every iteration pays the full
+    token cost of the longest context, even when narrower context would
+    suffice---a problem compounded by the iterative nature of the loop,
+    where 20--30 iterations are typical.
+\end{enumerate}
+
+Our key insight is that \emph{optimizer attention should be managed the same
+way a skilled developer manages their own}: start with a focused view that
+covers only the most relevant files and the strongest reference points, then
+broaden context only when the narrow view stalls. This principle---curating
+what the optimizer attends to rather than giving it more---motivates
+\textbf{Optimization Harness}, a modular framework that wraps any
+propose--evaluate loop with three capabilities: (i)~Docker file-scope
+sandboxing that restricts the proposer to a curated workspace,
+(ii)~mechanism-level optimization-focus prompts that steer exploration along
+named axes, and (iii)~labeled best/worst reference iterations that provide
+imitation targets and anti-patterns.
+
+Building on this framework, we introduce two adaptive context-selection
+policies:
+\begin{itemize}
+    \item \textbf{Progressive}: a budget state machine
+    (\texttt{low}$\,\to\,$\texttt{medium}$\,\to\,$\texttt{high}) that
+    escalates only after a Pareto-frontier stall and resets to \texttt{low}
+    on every improvement, minimizing the average per-iteration cost while
+    preserving the option to access full context when needed.
+    \item \textbf{Bandit}: a recommendation-driven variant that models
+    each workspace file as a multi-armed bandit arm, scoring files with a
+    per-file UCB scorer, rolling $z$-score reward, and Beta-smoothed prior.
+    High-utility files are concentrated in a ``hot workspace'' each
+    iteration, giving the proposer a curated view that adapts based on
+    which files historically correlate with score improvements.
+\end{itemize}
+
+We evaluate Optimization Harness across three benchmarks spanning
+conversational memory (LoCoMo), long-context retrieval (LongMemEval), and
+software engineering (SWE-bench Verified), using two proposer families
+(Claude Code with Kimi K2.6, and Codex GPT-5.4). Our progressive policy
+outperforms the fixed-high default in five of six (benchmark, proposer)
+cells. The bandit policy achieves the single strongest result: lifting
+SWE-bench Verified from 0.44 to 0.64 (+20\,pp) on the full 500-task split.
+Across ten adaptive training runs, 35 of 48 score-improvement events occur
+at \texttt{low} or \texttt{medium} budget, and after warm-up the
+per-opportunity breakthrough rate at \texttt{high} (9\%) does not exceed
+that of \texttt{low} (11\%) or \texttt{medium} (11\%).
+
+Our contributions are:
+\begin{enumerate}
+    \item We formalize the problem of \emph{proposer context management}
+    in scaffold optimization and identify three failure modes of the
+    attention-agnostic default.
+    \item We introduce Optimization Harness, a modular framework with
+    Docker sandboxing, mechanism-focus prompts, and reference labeling
+    that enables pluggable context-selection policies.
+    \item We propose two adaptive policies (progressive and bandit) that
+    implement graduated context disclosure, and evaluate them on three
+    benchmarks with two proposer families, demonstrating consistent
+    improvements over the fixed-high baseline.
+    \item We provide an empirical analysis of where optimization
+    breakthroughs occur across budget tiers, showing that curating
+    attention is more efficient per opportunity than maximizing context.
+\end{enumerate}
