@@ -5,90 +5,67 @@ Large language model (LLM) agents are increasingly deployed as autonomous
 software engineers~\cite{jimenez2024swebench,yang2024sweagent}, long-context
 assistants~\cite{wu2024longmemeval}, and conversational
 companions~\cite{maharana2024locomo}. Their effectiveness is largely
-determined by \emph{harness engineering}---the design of the surrounding
+determined by \emph{harness engineering}: the design of the surrounding
 code that orchestrates memory, retrieval, prompt routing, and tool
 use~\cite{lee2026metaharness}. Automating this design through
 propose--evaluate loops, where a second LLM (the \emph{proposer})
 iteratively improves the harness, has emerged as a promising
 paradigm~\cite{hu2024adas,khattab2023dspy}.
 
-Existing approaches span a spectrum of information exposure. At one end,
-systems like ACE~\cite{zhang2025ace} and
-OpenEvolve~\cite{sharma2025openevolve} compress iteration history into
-summaries or curated playbooks, feeding the proposer a lossy but compact
-view. At the other end, Meta-Harness~\cite{lee2026metaharness} takes the
-opposite stance: it deploys a coding agent (Claude Code) as the proposer
-with full filesystem access to all prior candidates, scores, and traces,
-arguing that a capable agent's native browsing and reasoning already
-constitute an effective search gradient---more information enables better
-optimization.
-
-We share this latter intuition: a coding agent's chain-of-thought
+Existing approaches span a spectrum of information exposure.
+ACE~\cite{zhang2025ace} and OpenEvolve~\cite{sharma2025openevolve}
+compress iteration history into summaries or curated playbooks, feeding
+the proposer a lossy but compact view.
+Meta-Harness~\cite{lee2026metaharness} takes the opposite stance,
+deploying a coding agent with full filesystem access to all prior
+candidates, scores, and traces, on the premise that a capable agent's
+native browsing and reasoning already constitute an effective search
+gradient. This intuition is sound: a coding agent's chain-of-thought
 \emph{is} the optimization gradient, and its ability to autonomously
-navigate large workspaces makes it a natural proposer. Building on this
-foundation, we observe that the proposer's effectiveness can be further
-improved by actively managing which files it attends to. As harnesses
-grow in complexity, often spanning dozens of source files, configuration
-schemas, and diagnostic logs, unrestricted file access can dilute the
+navigate large workspaces makes it a natural proposer. Yet even powerful
+proposers benefit from active management of which files they attend to.
+As harnesses grow in complexity, unrestricted file access can dilute the
 proposer's \textbf{attention} and diffuse its \textbf{optimization
-direction}: restricting the visible workspace to high-relevance files
-concentrates the proposer on the current optimization frontier and
-sharpens its search gradient, analogous to how
-CODEFILTER~\cite{li2025codefilter} shows that filtering retrieved context
-to only positive-impact chunks improves code completion over providing all
-retrieved files. Complementarily, explicit mechanism-level guidance enables
-\textbf{directed exploration}, steering the proposer toward structurally
-distinct alternatives (e.g., retrieval re-ranking, memory consolidation)
-rather than repeatedly revisiting familiar axes such as prompt wording.
+direction}, analogous to how CODEFILTER~\cite{li2025codefilter} shows
+that filtering retrieved context to only positive-impact chunks improves
+code completion over providing all retrieved files. Explicit
+mechanism-level guidance further enables \textbf{directed exploration},
+steering the proposer toward structurally distinct alternatives rather
+than repeatedly revisiting familiar axes such as prompt wording.
 
-Our key insight is that \emph{optimizer attention should be managed the same
-way a skilled developer manages their own}: start with a focused view that
-covers only the most relevant files and the strongest reference points, then
-broaden context only when the narrow view stalls. We introduce
-\textbf{Optimization Harness}, a modular framework that wraps any
-propose--evaluate loop with three capabilities: (i)~Docker file-scope
-sandboxing that restricts the proposer to a curated workspace,
-(ii)~mechanism-level optimization-focus prompts that steer exploration along
-named axes, and (iii)~labeled best/worst reference iterations that provide
-imitation targets and anti-patterns. Building on this framework, we propose
-two adaptive context-selection policies: a \emph{progressive} policy that
-runs a budget state machine
-(\texttt{low}$\,\to\,$\texttt{medium}$\,\to\,$\texttt{high}), escalating
-only after a Pareto-frontier stall and resetting on every improvement; and
-a \emph{bandit} policy that models each workspace file as a multi-armed
-bandit arm with a per-file UCB scorer and Beta-smoothed prior,
-concentrating high-utility files in a curated ``hot workspace'' each
-iteration.
+This paper introduces \textbf{Optimization Harness}, a modular framework
+that wraps any propose--evaluate loop with three capabilities:
+(i)~Docker file-scope sandboxing that restricts the proposer to a
+curated workspace, (ii)~mechanism-level optimization-focus prompts that
+steer exploration along named axes, and (iii)~labeled best/worst
+reference iterations that provide imitation targets and anti-patterns.
+Two adaptive context-selection policies build on this framework: a
+\emph{progressive} policy that escalates a budget state machine
+(\texttt{low}$\,\to\,$\texttt{medium}$\,\to\,$\texttt{high}) only after
+a Pareto-frontier stall, and a \emph{bandit} policy that scores each
+workspace file with a per-file UCB scorer and concentrates high-utility
+files in a curated ``hot workspace'' each iteration.
 
-We evaluate Optimization Harness across three benchmarks spanning
-conversational memory (LoCoMo), long-context retrieval (LongMemEval), and
-software engineering (SWE-bench Verified), using two proposer families
-(Claude Code with Kimi K2.6, and Codex GPT-5.4). Our progressive policy
-outperforms the fixed-high default in five of six (benchmark, proposer)
-cells. The bandit policy achieves the single strongest result: lifting
-SWE-bench Verified from 0.44 to 0.64 (+20\,pp) on the full 500-task split.
-Across ten adaptive training runs, 35 of 48 score-improvement events occur
-at \texttt{low} or \texttt{medium} budget, and after warm-up the
-per-opportunity breakthrough rate at \texttt{high} (9\%) does not exceed
-that of \texttt{low} (11\%) or \texttt{medium} (11\%).
-
-These results demonstrate that \emph{managing what the optimizer sees} is
-a complementary and effective lever to improving the optimizer
-itself---yielding up to +20\,pp gains without changing the underlying
-proposer model. Our contributions are:
+Across three benchmarks (LoCoMo, LongMemEval, SWE-bench Verified) and
+two proposer families (Claude Code with Kimi K2.6, and Codex GPT-5.4),
+the progressive policy outperforms the fixed-high default in five of six
+cells. The bandit policy achieves the single strongest result, lifting
+SWE-bench Verified from 0.44 to 0.64 (+20\,pp) on the full 500-task
+split. Across ten adaptive runs, 35 of 48 score-improvement events occur
+at \texttt{low} or \texttt{medium} budget, confirming that
+\emph{managing what the optimizer sees} is a complementary and effective
+lever to improving the optimizer itself. Our contributions are:
 \begin{enumerate}
-    \item We formalize the problem of \emph{proposer context management}
-    in harness optimization and show that curating the proposer's file
-    access improves attention focus, optimization direction, and
-    exploration diversity.
+    \item We formalize \emph{proposer context management} in harness
+    optimization and show that curating file access improves attention
+    focus, optimization direction, and exploration diversity.
     \item We introduce Optimization Harness, a modular framework with
     Docker sandboxing, mechanism-focus prompts, and reference labeling
     that enables pluggable context-selection policies.
-    \item We propose two adaptive policies (progressive and bandit) that
-    implement graduated context disclosure, and evaluate them on three
-    benchmarks with two proposer families, demonstrating consistent
-    improvements over the fixed-high baseline.
-    \item We provide an empirical analysis of where optimization
-    breakthroughs occur across budget tiers, showing that curating
-    attention is more efficient per opportunity than maximizing context.
+    \item We propose two adaptive policies (progressive and bandit) and
+    evaluate them on three benchmarks with two proposer families,
+    demonstrating consistent improvements over the fixed-high baseline.
+    \item We provide an empirical analysis of where breakthroughs occur
+    across budget tiers, showing that curating attention is more
+    efficient per opportunity than maximizing context.
 \end{enumerate}
