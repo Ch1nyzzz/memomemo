@@ -1,16 +1,15 @@
 \section{Method}
 \label{sec:method}
 
-Our method centers on two adaptive context-selection policies that
-control what the proposer sees at each iteration: the
-progressive policy curates which prior iterations to
-surface via a budget state machine that escalates only after a
-Pareto-frontier stall, and the bandit policy curates which
-workspace files to surface via per-file UCB scoring. Both plug into
-the same propose--evaluate loop and contrast with the fixed-context
-default that exposes the full file tree and complete history every
-iteration. We formalize the setting, describe the shared loop, and then
-present each policy.
+We instantiate the two axes from \S\ref{sec:intro} as adaptive
+context-selection policies sharing a single propose--evaluate loop:
+\emph{progressive} curates which prior iterations are surfaced via a
+budget state machine that escalates only after a Pareto-frontier
+stall, and \emph{bandit} curates which workspace files are surfaced
+via per-file UCB scoring. We first formalize the setting
+(\S\ref{sec:setting}) and the shared loop (\S\ref{sec:loop}), then
+describe each policy
+(\S\ref{sec:progressive}--\S\ref{sec:default}).
 
 \subsection{Problem Setting}
 \label{sec:setting}
@@ -28,13 +27,12 @@ $\{x_1,\ldots,x_n\}$, we measure two objectives:
            \operatorname{eval}(h,x_i),
            &\text{(average score)} \label{eq:avgscore}
 \end{align}
-where $\tau\!=\!0.8$ is a token-F1 pass threshold (matching the
-\texttt{PASS\_F1\_THRESHOLD} used by all benchmarks). The optimizer
-maintains a Pareto frontier~$\mathcal{F}$ over $(p,s)$ with passrate
-priority: a candidate that wins on passrate by more than a quality gap
-$\delta\!=\!0.125$ dominates regardless of average score, ensuring
-small-but-noisy $s$ improvements do not crowd out cheaper points with
-clearly higher~$p$.
+where $\tau\!=\!0.8$ is a token-F1 pass threshold shared across
+benchmarks. The optimizer maintains a Pareto frontier~$\mathcal{F}$
+over $(p,s)$ with passrate priority: a candidate that wins on passrate
+by more than a quality gap $\delta\!=\!0.125$ dominates regardless of
+average score, ensuring small-but-noisy $s$ improvements do not crowd
+out lower-$s$ candidates with clearly higher~$p$.
 
 A proposer~$\pi$ is a coding agent (Claude~Code, Codex, or Kimi)
 that, given a context bundle $C_k = (\Sigma_k, R_k, D_k)$ at
@@ -53,43 +51,26 @@ both extremes.
 \subsection{The Propose--Evaluate Loop}
 \label{sec:loop}
 
-All three policies share the loop shown in
+All three policies share the loop in
 Figure~\ref{fig:system_overview}. At iteration~$k$:
-(1)~the policy selects a budget
+(1)~the policy selects a budget tier
 $b_k\!\in\!\{\texttt{low},\texttt{medium},\texttt{high}\}$, reference
 iterations~$R_k$, trace scope, and (for the bandit) file-level
-hints~$D_k$; (2)~the harness assembles workspace~$W_k$ (cumulative
-summaries, the selected reference bundles with explicit role
-labels marking best iterations as imitation targets and worst
-iterations as anti-patterns, an editable source snapshot, and the file
-hints) and builds the prompt; (3)~the proposer~$\pi$ runs in a sandbox
-restricted to~$W_k$, edits the source snapshot, and writes one
-candidate specification (\texttt{pending\_eval.json}); (4)~the harness
-loads the candidate, evaluates it on the training split,
-updates~$\mathcal{F}$, and the policy writes back state. Sandboxing is
-implemented via Docker with file-access auditing---an implementation
-detail that prevents proposers from reading scoring helpers or raw
-benchmark data, but is independent of the policy contributions below.
-
-The three budgets control two dimensions of context:
-
-\begin{table}[h]
-\centering
-\small
-\begin{tabular}{@{}lccc@{}}
-\toprule
- & \texttt{low} & \texttt{medium} & \texttt{high} \\
-\midrule
-Reference iters & best\,1 + worst & best\,3 + worst & full history \\
-Trace scope & last\,1 & last\,3 & all \\
-\bottomrule
-\end{tabular}
-\vspace{2pt}
-\caption{Budget tiers and the context they expose to the proposer.
-``Trace scope'' controls how many recent per-task evaluation traces are
-included in each reference bundle.}
-\label{tab:budgets}
-\end{table}
+hints~$D_k$; (2)~the harness assembles workspace~$W_k$ from cumulative
+summaries, the selected reference bundles, an editable source
+snapshot, and the file hints. Each reference bundle is annotated as
+either an \emph{imitation target} (best iterations) or an
+\emph{anti-pattern} (worst iteration);\footnote{We show in
+\S\ref{sec:experiments} that the proposer attends to \emph{best}
+labels strongly but largely ignores \emph{worst} labels; we retain the
+worst slot for completeness and as a target for future work.}
+(3)~the proposer~$\pi$ runs in a sandbox restricted to~$W_k$, edits
+the source snapshot, and emits one candidate specification;
+(4)~the harness loads the candidate, evaluates it on the training
+split, updates~$\mathcal{F}$, and the policy writes back state.
+Sandboxing uses Docker with file-access auditing, preventing proposers
+from reading scoring helpers or raw benchmark data; this is
+independent of the policy contributions below.
 
 \begin{figure}[t]
   \centering
@@ -107,10 +88,11 @@ included in each reference bundle.}
 \label{sec:progressive}
 
 The progressive policy implements a budget state machine
-(Figure~\ref{fig:progressive_fsm}) that starts cheap and escalates only
-when the optimization stalls. The key insight is that most breakthroughs
-occur when the proposer focuses on a narrow context rather than browsing
-the full history.
+(Figure~\ref{fig:progressive_fsm}) that starts cheap and escalates
+only when the optimization stalls. The hypothesis motivating this
+design is that early breakthroughs are driven by focused, narrow
+contexts; we defer empirical confirmation to
+\S\ref{sec:experiments}.
 
 \paragraph{State machine.}
 Let $b_k$ denote the budget at iteration~$k$ and let
@@ -134,11 +116,31 @@ at cheap, narrow context and only escalates to \texttt{high} after
 consecutive stalls.
 
 \paragraph{Prompt construction.}
-At \texttt{low} and \texttt{medium} budgets the prompt explicitly labels
-the top-$k$ iterations by passrate (with $k\!=\!1$ for \texttt{low} and
-$k\!=\!3$ for \texttt{medium}) and the worst iteration. At \texttt{high}
-budget the proposer receives the full history and identifies roles from
-summaries.
+Each tier exposes a different slice of the history
+(Table~\ref{tab:budgets}): \texttt{low} surfaces a single best
+iteration with the worst as anti-pattern; \texttt{medium} expands to
+the top-3 by passrate; \texttt{high} feeds the full history and lets
+the proposer infer roles from the cumulative iteration summary.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{@{}lccc@{}}
+\toprule
+ & \texttt{low} & \texttt{medium} & \texttt{high} \\
+\midrule
+Reference iters & best\,1 + worst & best\,3 + worst & full history \\
+Trace scope & last\,1 & last\,3 & all \\
+\bottomrule
+\end{tabular}
+\vspace{2pt}
+\caption{Reference-iteration exposure under the \emph{progressive}
+budget tiers. ``Trace scope'' controls how many recent per-task
+evaluation traces are included in each reference bundle. The bandit
+policy uses a different per-budget selection
+(\S\ref{sec:bandit}).}
+\label{tab:budgets}
+\end{table}
 
 \begin{figure}[t]
   \centering
@@ -177,9 +179,13 @@ where $p_k\!=\!p(h_k)$, and $\hat\mu_k,\hat\sigma_k$ are the mean and
 standard deviation of passrates over the most recent~$W\!=\!8$
 iterations (with $\hat\sigma_k \ge \sigma_{\min}$). The clip bound is
 $\gamma\!=\!2$, and an iteration counts as a success when
-$r_k > 0$. Normalizing against the recent window---rather than the
-global best---lets a meaningful rebound during a stagnation stretch
-still earn positive reward.
+$r_k > 0$. The fixed penalty $-\gamma/4 = -0.5$ for invalid candidates
+is large enough to discourage repeated failure modes but smaller in
+magnitude than the worst-case clipped negative reward, so a single
+crash does not dominate downstream utility estimates. Normalizing
+against the recent window---rather than the global best---lets a
+meaningful rebound during a stagnation stretch still earn positive
+reward.
 
 \paragraph{Per-file utility.}
 After computing the reward, the harness records which files the proposer
@@ -193,22 +199,24 @@ policy score combines four components:
         + \underbrace{c\,\sqrt{\frac{\ln(k+1)}{n_f+1}}}_{\text{UCB bonus}},
   \label{eq:policy_score}
 \end{equation}
-where $\Delta_f^{\text{bin}}$ and $\Delta_f^{\text{rew}}$ are file~$f$'s
-binary success rate and mean reward relative to the global mean (both
-smoothed by a Beta prior of strength~$\alpha\!=\!2$), $\bar\ell_f$ is
-the average number of lines read from~$f$, $n_f$ is the read count, and
-$L\!=\!500$ is a line-count normalizer. The UCB bonus
-($c\!=\!0.15$) ensures under-explored files are sampled before their
-utility is written off, and the cost term ($\lambda\!=\!0.05$)
+where $\Delta_f^{\text{bin}}$ is file~$f$'s binary success rate
+relative to the global success rate, smoothed by a
+Beta($\alpha,\alpha$) prior; $\Delta_f^{\text{rew}}$ is file~$f$'s
+mean reward relative to the global mean, smoothed by $\alpha$
+pseudo-observations at the global mean ($\alpha\!=\!2$);
+$\bar\ell_f$ is the average number of lines read from~$f$, $n_f$ is
+the read count, and $L\!=\!500$ is a line-count normalizer. The UCB
+bonus ($c\!=\!0.15$) ensures under-explored files are sampled before
+their utility is written off, and the cost term ($\lambda\!=\!0.05$)
 discourages over-reading large files.
 
 \paragraph{Hot workspace and budget.}
 Files are sorted by $S_f$; a fixed set of core files (target
 scaffold source, base classes, summary files) is pinned, the top-8
-scored files join the hot list (800-line read budget) and the
-next-12 form the warm list (300-line budget). Together they
-constitute the hot workspace surfaced to the proposer as advisory
-hints---other files remain readable on demand. The budget tier is
+scored files join the hot list (800-line read cap) and the
+next-12 form the warm list (300-line cap). Together they constitute
+the hot workspace surfaced to the proposer as advisory hints; other
+files remain readable on demand. The budget tier is
 \begin{equation}
   b_k =
   \begin{cases}
@@ -246,16 +254,17 @@ harness-optimization systems implicitly adopt: every iteration uses
 \texttt{high} budget with no role labels, so the proposer sees the
 full file tree and complete history. We retain it as a controlled
 baseline to isolate the contribution of adaptive iteration- and
-file-selection.
+file-level context selection.
 
 \subsection{Benchmark Integration}
 \label{sec:benchmarks}
 
-Both policies are benchmark-agnostic: the shared loop and policy logic
-are identical across tasks. Only two components are specialized per
-benchmark: the evaluation function $\operatorname{eval}(\cdot)$ and the
-editable source files in the workspace specification. We evaluate on
-LoCoMo (conversational-memory QA)~\cite{maharana2024locomo},
-LongMemEval (long-term memory)~\cite{wu2024longmemeval}, and SWE-bench
-Verified (software engineering)~\cite{jimenez2024swebench}, spanning
-both memory-retrieval and coding-agent harnesses.
+The shared loop and policy logic are identical across tasks; only the
+evaluation function~$\operatorname{eval}(\cdot)$ and the editable
+source set in~$W_k$ are specialized per benchmark. We evaluate on
+LoCoMo (conversational-memory QA, scored by token-F1 against a
+reference answer)~\cite{maharana2024locomo}, LongMemEval (long-term
+memory, also token-F1)~\cite{wu2024longmemeval}, and SWE-bench
+Verified (software engineering, scored by patch-pass against the
+hidden test suite)~\cite{jimenez2024swebench}, spanning both
+memory-retrieval and coding-agent harnesses.

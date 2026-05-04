@@ -153,3 +153,86 @@ curves:
 - default should not be mixed into budget-stage breakthrough counts, because
   default has no budget transition. Its breakthroughs are all `default-high`
   by construction.
+
+## Reference-Iteration Read Distribution
+
+The adaptive policies do not always read fewer files than `default+direction`
+(see "Token Trend Context" above), but they redistribute *which* iteration
+directories the proposer attends to. This section quantifies that shift using
+the per-iteration `tool_access.json` traces from the kimi proposer runs on
+LongMemEval and LoCoMo. Codex5.4 runs are excluded because tool_uses are not
+logged for that proposer.
+
+Methodology. For every iteration we count, per Read tool call, which
+`reference_iterations/iter_NNN/` directory it lands in (if any). Each call also
+exposes a set of *available* `iter_NNN` directories under
+`workspace/reference_iterations/`. We then bucket each available directory by
+how the bandit policy labelled it (`best_iterations`, `worst_iteration`, other
+listed reference, or unlisted) and report **reads per available slot** across
+the run. The slot normalization removes the confound of "how many iter dirs
+were exposed".
+
+### Bandit best-iter hints concentrate attention strongly
+
+Two LongMemEval kimi `bandit_v3` runs, restricted to iterations whose policy
+included a non-empty `best_iterations` list:
+
+| run | bucket | slots | reads | reads/slot | lines/slot |
+|---|---|---:|---:|---:|---:|
+| mixed A | best-iter dirs | 58 | 124 | **2.14** | **513** |
+| mixed A | worst-iter dir | 24 | 11 | 0.46 | 87 |
+| mixed A | other ref dirs | 232 | 51 | 0.22 | 42 |
+| mixed B | best-iter dirs | 77 | 227 | **2.95** | **586** |
+| mixed B | worst-iter dir | 15 | 3 | 0.20 | 23 |
+| mixed B | other ref dirs | 233 | 47 | 0.20 | 11 |
+
+A `best`-tagged directory receives ~10–15× more Read calls per available slot
+than an unmarked reference directory, and ~50× more lines in mixed B. The
+`worst` directory is read at roughly the same rate as a random reference
+directory; on lines/slot it is *less* read than other refs in mixed B. The
+proposer selectively trusts the `best` hint and effectively ignores `worst`.
+
+### Without best/worst hints, attention defaults to recency
+
+For `default+direction` the policy exposes *all* prior iter dirs without any
+best/worst label. Bucketing the same reads-per-slot metric by recency of the
+exposed iter:
+
+| run | recent (last 3) | middle | early (first 3) |
+|---|---:|---:|---:|
+| LME default+direction A | 1.79 | 0.26 | 0.03 |
+| LME default+direction B | 1.30 | 0.48 | 0.00 |
+| LoCoMo default+direction A | 2.06 | 0.26 | 0.04 |
+
+Early iterations are read ~50–70× less often than the most recent three. With
+no policy hint, the proposer falls back to a strong recency prior.
+
+### Bandit pulls attention back into early and middle iters
+
+The same recency bucketing applied to LME bandit_v3 mixed B and the matched
+`default+direction` baseline:
+
+| bucket | bandit mixed B reads/slot | default+direction A reads/slot |
+|---|---:|---:|
+| recent (last 3) | 1.68 | 1.79 |
+| middle | **0.72** | 0.26 |
+| early (first 3) | **0.14** | 0.03 |
+
+Recent-iter coverage is essentially unchanged, but middle iters receive ~2.8×
+more reads per slot under bandit, and early iters ~5× more. The bandit's
+`best_iterations` list pulls the proposer back to older iterations that the
+recency prior would otherwise skip.
+
+### Takeaways
+
+- The adaptive policies' main effect on read behavior is *redistribution*, not
+  reduction: total Read calls per iteration are similar to `default+direction`
+  (~21–23 reads/iter) but the targets shift.
+- The `best_iterations` slot is the primary lever; bandit-marked best dirs
+  receive ~10–15× more reads per slot than unmarked refs.
+- The `worst_iteration` slot has near-zero observable effect on the proposer's
+  read distribution; if a future revision keeps it, the worst summary should be
+  surfaced more directly in the prompt rather than only as a referenced dir.
+- Without bandit hints, the proposer defaults to strong recency bias and
+  almost never re-reads early iterations; this is the failure mode that the
+  best-iter pointer corrects.
