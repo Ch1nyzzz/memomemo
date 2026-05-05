@@ -54,7 +54,7 @@ pipeline rows.
 
 | family | entries | trainfirst30 passrate mean +/- std | best trainfirst30 | best full500 | input/propose | output/propose | cache/propose | total/propose | tools/propose | read_files/propose | read_lines/propose | unique_files/propose |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| default-family | 2 docs | 0.5000 +/- 0.0000 | 0.5000 | 0.6100 | 167.3k | 29.4k | 4.58M | 4.78M | 63.5 | NA | NA | 24.2 |
+| default | 1 docs | 0.5000 | 0.5000 | 0.4580 | 136.3k | 28.6k | 3.06M | 3.22M | 56.0 | NA | NA | 23.2 |
 | progressive | 1 docs | 0.5333 | 0.5333 | 0.6200 | 141.8k | 29.7k | 3.61M | 3.78M | 61.0 | NA | NA | 23.6 |
 | bandit fixedsource | 1 docs | 0.5333 | 0.5333 | 0.6400 | 128.9k | 26.1k | 3.35M | 3.51M | 56.6 | NA | NA | 25.5 |
 
