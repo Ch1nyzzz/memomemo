@@ -32,11 +32,20 @@ from memomemo.evaluation import EvaluationRunner, run_initial_frontier
 from memomemo.locomo import default_data_path, load_locomo_examples, prepare_locomo, select_split
 from memomemo.model import DEFAULT_BASE_URL, DEFAULT_MODEL
 from memomemo.optimization_cells import get_target_cells
+from memomemo.pareto import ParetoPoint, pareto_frontier, save_frontier
 from memomemo.post_eval import write_diff_digest, write_post_eval_artifacts
 from memomemo.proposer_prompt import build_progressive_proposer_prompt
 from memomemo.scaffolds import DEFAULT_EVOLUTION_SEED_SCAFFOLDS, DEFAULT_SCAFFOLD_TOP_KS
 from memomemo.scaffolds.base import ScaffoldConfig
 from memomemo.schemas import CandidateResult, LocomoExample
+
+
+DEFAULT_PROPOSER_DOCKER_IMAGES = {
+    "claude": "docker-claude:latest",
+    "codex": "docker-codex:latest",
+    "kimi": "docker-claude-kimi:latest",
+}
+CODEX_DOCKER_AUTH_ENV = "OPENAI_API_KEY"
 
 
 def _pending_candidates(payload: Any) -> list[Any]:
@@ -77,14 +86,21 @@ class OptimizerConfig:
     scaffolds: tuple[str, ...] = DEFAULT_EVOLUTION_SEED_SCAFFOLDS
     scaffold_extra: dict[str, dict[str, object]] | None = None
     selection_policy: str = "default"
+    include_optimization_direction: bool = False
+    force_budget: str = ""
     progressive_target_system: str = "memgpt"
     progressive_initial_low_iterations: int = 5
     bandit_prior_weight: float = 0.4
-    bandit_exploration_c: float = 0.08
-    bandit_cost_lambda: float = 0.04
-    bandit_line_scale: int = 200
+    bandit_prior_alpha: float = 2.0
+    bandit_exploration_c: float = 0.15
+    bandit_cost_lambda: float = 0.05
+    bandit_line_scale: int = 500
     bandit_min_core_files: bool = True
     bandit_stagnation_threshold: int = 4
+    bandit_reward_window: int = 8
+    bandit_reward_sigma_floor: float = 0.02
+    bandit_reward_clip: float = 2.0
+    bandit_failed_iter_penalty: float = 0.5
     pareto_quality_threshold: float = 0.125
     proposer_sandbox: str = "docker"
     proposer_docker_image: str = ""
@@ -94,6 +110,9 @@ class OptimizerConfig:
     proposer_docker_kimi_cli_kind: str = "claude"
     proposer_docker_user: str = ""
     proposer_docker_home: str = ""
+    test_frontier: bool = False
+    test_split: str = "test"
+    test_limit: int = 0
 
 
 class LocomoOptimizer:
@@ -128,7 +147,7 @@ class LocomoOptimizer:
             raise ValueError(
                 f"{policy} selection policy requires --proposer-sandbox docker"
             )
-        if not self.config.proposer_docker_image.strip():
+        if not self._effective_proposer_docker_image():
             raise ValueError(
                 f"{policy} selection policy requires --proposer-docker-image"
             )
@@ -176,7 +195,7 @@ class LocomoOptimizer:
             candidates.extend(self._load_existing_candidates())
 
         if candidates and not self.config.skip_scaffold_eval:
-            best_ids = self._best_passrate_ids(candidates)
+            best_ids = self._quality_frontier_ids(candidates)
             write_post_eval_artifacts(
                 run_dir=self.run_dir,
                 call_dir=None,
@@ -190,17 +209,21 @@ class LocomoOptimizer:
 
         for iteration in range(1, self.config.iterations + 1):
             previous_best_passrate = self._best_passrate(candidates)
+            previous_frontier_ids = self._quality_frontier_ids(candidates)
+            previous_best_quality = self._best_quality_value(candidates)
             bandit_policy: dict[str, Any] | None = None
+            forced_budget = self.config.force_budget or None
             if self.config.selection_policy == "bandit":
                 bandit_policy = self._bandit_policy_for_workspace(
                     iteration=iteration,
                     candidates=candidates,
+                    force_budget=forced_budget,
                 )
                 budget = str(bandit_policy.get("budget") or "low")
             elif self.config.selection_policy == "progressive":
-                budget = self._progressive_budget_for_iteration(iteration)
+                budget = forced_budget or self._progressive_budget_for_iteration(iteration)
             else:
-                budget = "high"
+                budget = forced_budget or "high"
             evaluated = self._run_progressive_proposer_iteration(
                 iteration,
                 candidates,
@@ -213,7 +236,7 @@ class LocomoOptimizer:
             candidates.extend(evaluated)
             self._save_best_candidates(candidates)
             self._refresh_run_indexes(candidates)
-            best_ids = self._best_passrate_ids(candidates)
+            best_ids = self._quality_frontier_ids(candidates)
             write_post_eval_artifacts(
                 run_dir=self.run_dir,
                 call_dir=None,
@@ -226,6 +249,7 @@ class LocomoOptimizer:
                     iteration=iteration,
                     budget=budget,
                     previous_best_passrate=previous_best_passrate,
+                    previous_frontier_ids=previous_frontier_ids,
                     candidates=candidates,
                     evaluated=evaluated,
                 )
@@ -233,9 +257,16 @@ class LocomoOptimizer:
                 self._update_bandit_state(
                     iteration=iteration,
                     previous_best_passrate=previous_best_passrate,
+                    previous_best_quality=previous_best_quality,
                     evaluated=evaluated,
                     call_dir=self._iteration_dir(iteration),
                 )
+
+        test_frontier_summary = (
+            self._run_test_frontier(candidates)
+            if self.config.test_frontier
+            else None
+        )
 
         final_summary = {
             "run_id": self.config.run_id,
@@ -246,6 +277,8 @@ class LocomoOptimizer:
             "selection_policy": self.config.selection_policy,
             "proposer_metrics": self._aggregate_proposer_metrics(),
         }
+        if test_frontier_summary is not None:
+            final_summary["test_frontier"] = test_frontier_summary
         if self.config.selection_policy == "bandit":
             final_summary["bandit_state_path"] = str(self.bandit_state_path)
             final_summary["bandit_policy"] = self._load_bandit_state().get("last_policy", {})
@@ -325,7 +358,7 @@ class LocomoOptimizer:
                 target_system=self.config.progressive_target_system,
                 optimization_directions=(
                     self._optimization_direction_lines(self.config.progressive_target_system)
-                    if adaptive
+                    if (adaptive or self.config.include_optimization_direction)
                     else ()
                 ),
                 split=self.config.split,
@@ -616,7 +649,7 @@ class LocomoOptimizer:
         (call_dir / "pending_eval.json").write_text(normalized_pending, encoding="utf-8")
 
         evaluated = self._evaluate_proposed(iteration, proposed, examples)
-        best_ids = self._best_passrate_ids(existing_candidates + evaluated)
+        best_ids = self._quality_frontier_ids(existing_candidates + evaluated)
         write_post_eval_artifacts(
             run_dir=self.run_dir,
             call_dir=call_dir,
@@ -920,12 +953,15 @@ class LocomoOptimizer:
         )
 
     def _load_examples(self) -> list[LocomoExample]:
+        return self._load_examples_for_split(self.config.split, self.config.limit)
+
+    def _load_examples_for_split(self, split: str, limit: int = 0) -> list[LocomoExample]:
         if not default_data_path().exists():
             prepare_locomo()
         examples = load_locomo_examples()
-        selected = select_split(examples, split=self.config.split)
-        if self.config.limit:
-            selected = selected[: self.config.limit]
+        selected = select_split(examples, split=split)
+        if limit:
+            selected = selected[:limit]
         return selected
 
     def _run_seed_frontier(self) -> dict[str, Any]:
@@ -944,6 +980,167 @@ class LocomoOptimizer:
             scaffolds=self.config.scaffolds,
             scaffold_extra=self.config.scaffold_extra,
         )
+
+    def _run_test_frontier(self, candidates: list[CandidateResult]) -> dict[str, Any]:
+        frontier = self._quality_frontier(candidates)
+        test_dir = self.run_dir / "test_frontier"
+        specs_dir = test_dir / "candidate_specs"
+        specs_dir.mkdir(parents=True, exist_ok=True)
+        examples = self._load_examples_for_split(self.config.test_split, self.config.test_limit)
+        runner = self._make_evaluation_runner(examples, out_dir=test_dir)
+
+        rows: list[dict[str, Any]] = []
+        test_results: list[CandidateResult] = []
+        failures: list[dict[str, Any]] = []
+        for candidate in frontier:
+            spec = self._candidate_test_spec(candidate)
+            spec_path = specs_dir / f"{spec['candidate_id']}.json"
+            spec_path.write_text(
+                json.dumps(spec, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            try:
+                scaffold = load_candidate_scaffold(spec, project_root=self.project_root)
+                config = ScaffoldConfig(
+                    top_k=int(spec.get("top_k", 8)),
+                    window=int(spec.get("window", 1)),
+                    extra=dict(spec.get("extra") or {}),
+                )
+                result = runner.evaluate_scaffold(
+                    scaffold=scaffold,
+                    scaffold_name=str(spec.get("name") or candidate.scaffold_name),
+                    config=config,
+                    candidate_id=str(spec["candidate_id"]),
+                )
+            except Exception as exc:  # noqa: BLE001 - keep testing the rest of the frontier
+                failure = {
+                    "original_candidate_id": candidate.candidate_id,
+                    "test_candidate_id": spec["candidate_id"],
+                    "candidate_spec_path": str(spec_path),
+                    "error": str(exc),
+                }
+                failures.append(failure)
+                rows.append(
+                    {
+                        "original_candidate": candidate.to_dict(),
+                        "candidate_spec_path": str(spec_path),
+                        "error": str(exc),
+                    }
+                )
+                self._append_event(
+                    {
+                        "event": "test_frontier_candidate_failed",
+                        **failure,
+                    }
+                )
+                continue
+
+            test_results.append(result)
+            rows.append(
+                {
+                    "original_candidate": candidate.to_dict(),
+                    "candidate_spec_path": str(spec_path),
+                    "test_candidate": result.to_dict(),
+                }
+            )
+
+        results_path = test_dir / "test_results.json"
+        results_path.write_text(
+            json.dumps(rows, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        test_frontier_path = test_dir / "test_pareto_frontier.json"
+        save_frontier(
+            test_frontier_path,
+            [
+                ParetoPoint(
+                    candidate_id=item.candidate_id,
+                    scaffold_name=item.scaffold_name,
+                    passrate=item.passrate,
+                    token_consuming=item.token_consuming,
+                    avg_token_consuming=item.avg_token_consuming,
+                    average_score=item.average_score,
+                    result_path=item.result_path,
+                    config=item.config,
+                )
+                for item in test_results
+            ],
+            quality_gap_threshold=self.config.pareto_quality_threshold,
+        )
+        summary = {
+            "split": self.config.test_split,
+            "limit": self.config.test_limit,
+            "count": len(examples),
+            "train_frontier_count": len(frontier),
+            "evaluated_count": len(test_results),
+            "failed_count": len(failures),
+            "test_dir": str(test_dir),
+            "test_results_path": str(results_path),
+            "test_pareto_frontier_path": str(test_frontier_path),
+            "candidate_spec_dir": str(specs_dir),
+            "failures": failures,
+        }
+        summary_path = self.run_dir / "test_frontier_summary.json"
+        summary_path.write_text(
+            json.dumps(summary, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        summary["summary_path"] = str(summary_path)
+        return summary
+
+    def _candidate_test_spec(self, candidate: CandidateResult) -> dict[str, Any]:
+        config = candidate.config if isinstance(candidate.config, dict) else {}
+        extra = self._candidate_extra(candidate)
+        top_k, _ = _single_top_k(config.get("top_k", 8))
+        spec: dict[str, Any] = {
+            "name": candidate.scaffold_name,
+            "candidate_id": self._test_candidate_id(candidate.candidate_id),
+            "original_candidate_id": candidate.candidate_id,
+            "top_k": top_k,
+            "window": int(config.get("window", 1)),
+            "extra": extra,
+        }
+        for key in (
+            "build_tag",
+            "candidate_root",
+            "class",
+            "factory",
+            "generated_dir",
+            "module",
+            "module_path",
+            "project_source_path",
+            "source_project_path",
+            "memomemo_source_path",
+        ):
+            if key in extra:
+                spec[key] = extra[key]
+
+        has_source_project = any(
+            spec.get(key)
+            for key in ("source_project_path", "project_source_path", "memomemo_source_path")
+        )
+        has_dynamic_module = bool(spec.get("module") or spec.get("module_path"))
+        if has_source_project:
+            spec["scaffold_name"] = self._source_scaffold_name(candidate)
+        elif not has_dynamic_module:
+            spec["scaffold_name"] = str(extra.get("scaffold_name") or candidate.scaffold_name)
+        return spec
+
+    def _source_scaffold_name(self, candidate: CandidateResult) -> str:
+        extra = self._candidate_extra(candidate)
+        explicit = str(extra.get("scaffold_name") or "").strip()
+        if explicit:
+            return explicit
+        return {
+            "bm25": "bm25",
+            "mem0": "mem0_source",
+            "memgpt": "memgpt_source",
+            "membank": "membank_source",
+        }.get(self._infer_source_family(candidate), candidate.scaffold_name)
+
+    def _test_candidate_id(self, candidate_id: str) -> str:
+        safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", candidate_id).strip("._-")
+        return f"test_{safe or 'candidate'}"
 
     def _benchmark_prompt_name(self) -> str:
         return "LOCOMO conversational-memory QA"
@@ -983,17 +1180,53 @@ class LocomoOptimizer:
             return None
         if kind != "docker":
             raise ValueError(f"unsupported proposer sandbox: {self.config.proposer_sandbox!r}")
-        docker_env = _dedupe_tuple(DEFAULT_DOCKER_ENV_VARS + self.config.proposer_docker_env)
+        agent = self.config.proposer_agent.strip().lower()
+        docker_env = _dedupe_tuple(
+            self._default_proposer_docker_env(agent) + self.config.proposer_docker_env
+        )
+        docker_mount = _dedupe_tuple(
+            self._default_proposer_docker_mounts(agent)
+            + tuple(self.config.proposer_docker_mount)
+        )
         return ProposerSandboxConfig(
             kind="docker",
-            docker_image=self.config.proposer_docker_image,
+            docker_image=self._effective_proposer_docker_image(),
             docker_workspace=self.config.proposer_docker_workspace or "/workspace",
             docker_env_vars=docker_env,
-            docker_mounts=self.config.proposer_docker_mount,
+            docker_mounts=docker_mount,
             docker_kimi_cli_kind=self.config.proposer_docker_kimi_cli_kind,
             docker_user=self.config.proposer_docker_user,
             docker_home=self.config.proposer_docker_home,
         )
+
+    def _default_proposer_docker_env(self, agent: str) -> tuple[str, ...]:
+        if agent != "codex" or CODEX_DOCKER_AUTH_ENV in self.config.proposer_docker_env:
+            return DEFAULT_DOCKER_ENV_VARS
+        return tuple(
+            name for name in DEFAULT_DOCKER_ENV_VARS if name != CODEX_DOCKER_AUTH_ENV
+        )
+
+    def _default_proposer_docker_mounts(self, agent: str) -> tuple[str, ...]:
+        if agent != "codex":
+            return ()
+        auth_dir = Path.home() / ".codex"
+        if not auth_dir.exists():
+            return ()
+        container_home = self.config.proposer_docker_home.strip() or "/root"
+        container_auth_dir = f"{container_home.rstrip('/')}/.codex"
+        if any(
+            _docker_mount_container_path(mount) == container_auth_dir
+            for mount in self.config.proposer_docker_mount
+        ):
+            return ()
+        return (f"{auth_dir}:{container_auth_dir}:ro",)
+
+    def _effective_proposer_docker_image(self) -> str:
+        configured = self.config.proposer_docker_image.strip()
+        if configured:
+            return configured
+        agent = self.config.proposer_agent.strip().lower()
+        return DEFAULT_PROPOSER_DOCKER_IMAGES.get(agent, "")
 
     def _evaluate_proposed(
         self,
@@ -1044,12 +1277,15 @@ class LocomoOptimizer:
             extra = dict(raw.get("extra") or {})
             for key in (
                 "build_tag",
+                "candidate_root",
                 "class",
                 "cost_level",
                 "factory",
+                "generated_dir",
                 "module",
                 "module_path",
                 "project_source_path",
+                "scaffold_name",
                 "source_base_dir",
                 "source_family",
                 "source_path",
@@ -1093,10 +1329,15 @@ class LocomoOptimizer:
             self._append_summary(iteration=iteration, candidate=result, proposal=raw)
         return results
 
-    def _make_evaluation_runner(self, examples: list[LocomoExample]) -> EvaluationRunner:
+    def _make_evaluation_runner(
+        self,
+        examples: list[LocomoExample],
+        *,
+        out_dir: Path | None = None,
+    ) -> EvaluationRunner:
         return EvaluationRunner(
             examples=examples,
-            out_dir=self.run_dir,
+            out_dir=out_dir or self.run_dir,
             model=self.config.model,
             base_url=self.config.base_url,
             api_key=self.config.api_key,
@@ -1190,6 +1431,8 @@ class LocomoOptimizer:
         tool_access = getattr(result, "tool_access", None)
         if not isinstance(tool_access, dict):
             return []
+        if self._proposer_allows_container_internal_access():
+            return []
 
         allowed_roots = [workspace_dir]
         violations: list[dict[str, str]] = []
@@ -1216,6 +1459,9 @@ class LocomoOptimizer:
                     }
                 )
         return violations
+
+    def _proposer_allows_container_internal_access(self) -> bool:
+        return self.config.proposer_sandbox.strip().lower() == "docker"
 
     def _access_retry_note(
         self,
@@ -1389,12 +1635,18 @@ class LocomoOptimizer:
         iteration: int,
         budget: str,
         previous_best_passrate: float,
+        previous_frontier_ids: set[str] | None = None,
         candidates: list[CandidateResult],
         evaluated: list[CandidateResult],
     ) -> None:
         best = max(candidates, key=_candidate_score) if candidates else None
         best_passrate = best.passrate if best is not None else 0.0
-        improved = bool(evaluated and best_passrate > previous_best_passrate)
+        frontier_ids = self._quality_frontier_ids(candidates)
+        if previous_frontier_ids is None:
+            improved = bool(evaluated and best_passrate > previous_best_passrate)
+        else:
+            evaluated_ids = {item.candidate_id for item in evaluated}
+            improved = bool(evaluated_ids & (frontier_ids - previous_frontier_ids))
         prior = self._load_progressive_state()
         stagnation = 0 if improved else int(prior.get("stagnation_count") or 0) + 1
         if iteration < self.config.progressive_initial_low_iterations:
@@ -1412,7 +1664,9 @@ class LocomoOptimizer:
             "next_budget": next_budget,
             "stagnation_count": stagnation,
             "best_passrate": best_passrate,
+            "best_average_score": best.average_score if best is not None else 0.0,
             "best_candidate_id": best.candidate_id if best is not None else None,
+            "frontier_candidate_ids": sorted(frontier_ids),
             "last_improved_iteration": (
                 iteration if improved else int(prior.get("last_improved_iteration") or 0)
             ),
@@ -1448,14 +1702,18 @@ class LocomoOptimizer:
         *,
         iteration: int,
         candidates: list[CandidateResult],
+        force_budget: str | None = None,
     ) -> dict[str, Any]:
         state = self._load_bandit_state()
         files = state.get("files") if isinstance(state.get("files"), dict) else {}
+        required = self._bandit_required_paths_set()
         scored = sorted(
             (
-                (str(path), float(info.get("policy_score") or 0.0))
+                (str(path), float(info.get("policy_score")))
                 for path, info in files.items()
                 if isinstance(info, dict)
+                and info.get("policy_score") is not None
+                and str(path) not in required
             ),
             key=lambda item: (-item[1], item[0]),
         )
@@ -1467,10 +1725,37 @@ class LocomoOptimizer:
         stagnation = max(0, iteration - last_improvement - 1)
         stagnated = stagnation >= self.config.bandit_stagnation_threshold
 
-        if iteration <= 1 or not files:
+        if force_budget == "low":
             budget = "low"
             trace_scope = "last1"
-            reference_iterations: tuple[int, ...] = ()
+            reference_iterations: tuple[int, ...] = self._bandit_reference_iterations(
+                iteration=iteration,
+                candidates=candidates,
+                state=state,
+                budget=budget,
+            )
+        elif force_budget == "medium":
+            budget = "medium"
+            trace_scope = "last3"
+            reference_iterations = self._bandit_reference_iterations(
+                iteration=iteration,
+                candidates=candidates,
+                state=state,
+                budget=budget,
+            )
+        elif force_budget == "high":
+            budget = "high"
+            trace_scope = "all"
+            reference_iterations = self._bandit_reference_iterations(
+                iteration=iteration,
+                candidates=candidates,
+                state=state,
+                budget=budget,
+            )
+        elif iteration <= 1 or not files:
+            budget = "low"
+            trace_scope = "last1"
+            reference_iterations = ()
         elif stagnated:
             budget = "high"
             trace_scope = "all"
@@ -1490,14 +1775,20 @@ class LocomoOptimizer:
                 budget=budget,
             )
 
-        cold = (
-            []
-            if stagnated
-            else _dedupe_list([path for path, score in scored if score < 0.0])[:12]
+        best_iter_count = 1 if budget == "low" else 3
+        best_iters = [
+            it for it in self._best_iterations(candidates, k=best_iter_count)
+            if it in set(reference_iterations)
+        ]
+        worst_candidate_iter = self._worst_iteration(candidates)
+        worst_iter = (
+            worst_candidate_iter
+            if worst_candidate_iter is not None and worst_candidate_iter in set(reference_iterations)
+            else None
         )
         read_budget = {
             path: (800 if path in hot else 300)
-            for path in _dedupe_list(hot + warm + cold)
+            for path in _dedupe_list(hot + warm)
         }
         policy = {
             "budget": budget,
@@ -1505,7 +1796,9 @@ class LocomoOptimizer:
             "trace_scope": trace_scope,
             "hot_files": hot,
             "warm_files": warm,
-            "cold_files": cold,
+            "cold_files": [],
+            "best_iterations": best_iters,
+            "worst_iteration": worst_iter,
             "read_budget_lines_by_path": read_budget,
             "policy_score_snapshot": {path: score for path, score in scored[:20]},
         }
@@ -1517,6 +1810,19 @@ class LocomoOptimizer:
         )
         return policy
 
+    def _bandit_required_paths_set(self) -> set[str]:
+        required: set[str] = set(self._bandit_core_files())
+        # Cumulative summaries the proposer should consult freely; sizing handles
+        # whether re-reading is worthwhile, not the bandit ranking.
+        for rel in (
+            "summaries/evolution_summary.jsonl",
+            "summaries/best_candidates.json",
+            "summaries/iteration_index.json",
+            "pending_eval.json",
+        ):
+            required.add(rel)
+        return required
+
     def _bandit_reference_iterations(
         self,
         *,
@@ -1525,6 +1831,10 @@ class LocomoOptimizer:
         state: dict[str, Any],
         budget: str,
     ) -> tuple[int, ...]:
+        # bandit v4: align ref-iter selection with progressive's best-k+worst
+        # structure, then prepend hot_iters reverse-resolved from the previous
+        # iteration's hot/warm file paths. cap=3 for low, cap=5 for medium;
+        # high keeps the full-history behaviour.
         available = {
             item
             for item in self._candidate_iterations(candidates)
@@ -1542,16 +1852,17 @@ class LocomoOptimizer:
             list(last_policy.get("hot_files") or [])
             + list(last_policy.get("warm_files") or [])
         )
-        fallback: list[int] = []
-        fallback.extend(self._best_iterations(candidates, k=3))
-        last_improvement = self._bandit_last_improvement_iteration(candidates)
-        if last_improvement is not None:
-            fallback.append(last_improvement)
 
-        cap = 5
+        base: list[int] = []
+        base.extend(self._best_iterations(candidates, k=1 if budget == "low" else 3))
+        worst = self._worst_iteration(candidates)
+        if worst is not None:
+            base.append(worst)
+
+        cap = 3 if budget == "low" else 5
         out: list[int] = []
         seen: set[int] = set()
-        for item in list(hot_iters) + fallback:
+        for item in list(hot_iters) + base:
             if item in available and item not in seen:
                 out.append(item)
                 seen.add(item)
@@ -1564,6 +1875,7 @@ class LocomoOptimizer:
         *,
         iteration: int,
         previous_best_passrate: float,
+        previous_best_quality: float | None = None,
         evaluated: list[CandidateResult],
         call_dir: Path,
     ) -> None:
@@ -1583,17 +1895,29 @@ class LocomoOptimizer:
             for path in self._changed_paths_from_diff(call_dir / "diff.patch")
         })
         best_eval_passrate = max((item.passrate for item in evaluated), default=0.0)
-        eps = 1e-12
-        entered_best = previous_best_passrate > 0.0 and any(
-            item.passrate >= previous_best_passrate - eps for item in evaluated
-        )
-        success = bool(
-            evaluated and (best_eval_passrate > previous_best_passrate + eps or entered_best)
-        )
-        reward = max(0.0, best_eval_passrate - previous_best_passrate)
-        if not evaluated and read_paths:
-            reward = -0.005
+        previous_quality = previous_best_passrate
+        reward_value = best_eval_passrate
+        history = list(state.get("passrate_history") or [])
+        prev_quality = [float(p) for p in history if p is not None]
+        recent_quality = prev_quality[-self.config.bandit_reward_window :]
+        clip = self.config.bandit_reward_clip
+        if not evaluated:
+            reward = -clip * 0.25
+        elif len(recent_quality) < 2:
+            # Pre-window iterations: use scaled improvement vs prior best as a
+            # rough surrogate, then transition to z-score once history fills.
+            raw = reward_value - previous_quality
+            reward = max(-clip, min(clip, raw * 10.0))
+        else:
+            mu = sum(recent_quality) / len(recent_quality)
+            var = sum((p - mu) ** 2 for p in recent_quality) / len(recent_quality)
+            sigma = max(self.config.bandit_reward_sigma_floor, var**0.5)
+            reward = max(-clip, min(clip, (reward_value - mu) / sigma))
+        success = reward > 0.0
 
+        history.append(reward_value if evaluated else None)
+        state.pop("quality_history", None)
+        state["passrate_history"] = history
         state["total_iters"] = int(state.get("total_iters") or 0) + 1
         if success:
             state["success_iters"] = int(state.get("success_iters") or 0) + 1
@@ -1622,20 +1946,51 @@ class LocomoOptimizer:
 
     def _recompute_bandit_scores(self, state: dict[str, Any]) -> None:
         files = state.get("files") if isinstance(state.get("files"), dict) else {}
+        required = self._bandit_required_paths_set()
         total_iters = max(1, int(state.get("total_iters") or 0))
-        p_global = float(state.get("success_iters") or 0) / total_iters
-        global_reward = float(state.get("global_reward_sum") or 0.0) / total_iters
-        alpha = 5.0
-        for info in files.values():
+
+        # Global stats are computed only from "scored" reads — reads of files
+        # that the bandit actually ranks. Required (always-include) files and
+        # phantom entries (reads=0, only seen via diff/write) are excluded so
+        # the prior on per-file utility reflects the discretionary read pool.
+        scored_read_iters = 0
+        scored_success_iters = 0
+        scored_reward_sum = 0.0
+        for path, info in files.items():
             if not isinstance(info, dict):
                 continue
             read_iters = int(info.get("read_iters") or 0)
+            if read_iters == 0 or path in required:
+                continue
+            scored_read_iters += read_iters
+            scored_success_iters += int(info.get("success_iters") or 0)
+            scored_reward_sum += float(info.get("reward_sum") or 0.0)
+
+        p_global = (
+            scored_success_iters / scored_read_iters if scored_read_iters > 0 else 0.0
+        )
+        mean_reward_global = (
+            scored_reward_sum / scored_read_iters if scored_read_iters > 0 else 0.0
+        )
+        alpha = self.config.bandit_prior_alpha
+        for path, info in files.items():
+            if not isinstance(info, dict):
+                continue
+            read_iters = int(info.get("read_iters") or 0)
+            if read_iters == 0 or path in required:
+                # Required files are always included via _bandit_core_files();
+                # phantom entries (changed/written but never read) carry no
+                # signal worth ranking against discretionary reads.
+                info["utility"] = 0.0
+                info["policy_score"] = None
+                info.setdefault("cooldown_until", 0)
+                continue
             p_file = (
                 float(info.get("success_iters") or 0) + alpha * p_global
             ) / (read_iters + alpha)
             mean_reward = (
                 float(info.get("reward_sum") or 0.0)
-                + alpha * self.config.bandit_prior_weight * global_reward
+                + alpha * self.config.bandit_prior_weight * mean_reward_global
             ) / (read_iters + alpha)
             avg_lines = float(info.get("read_lines") or 0) / max(1, read_iters)
             cost = self.config.bandit_cost_lambda * math.log1p(
@@ -1645,7 +2000,7 @@ class LocomoOptimizer:
                 math.log(total_iters + 1) / (read_iters + 1)
             )
             binary_utility = p_file - p_global
-            reward_utility = mean_reward - global_reward
+            reward_utility = mean_reward - mean_reward_global
             score = 0.7 * binary_utility + 0.3 * reward_utility - cost + bonus
             info["utility"] = 0.7 * binary_utility + 0.3 * reward_utility
             info["policy_score"] = score
@@ -1690,6 +2045,10 @@ class LocomoOptimizer:
                 "summaries/candidate_score_table.json",
                 "summaries/retrieval_diagnostics_summary.json",
                 "summaries/diff_summary.jsonl",
+                "summaries/evolution_summary.jsonl",
+                "summaries/best_candidates.json",
+                "summaries/iteration_index.json",
+                "pending_eval.json",
             ]
         )
 
@@ -1700,6 +2059,8 @@ class LocomoOptimizer:
             return out
         for path, stats in raw.items():
             normalized = self._bandit_normalize_access_path(str(path))
+            if not self._bandit_is_trackable_path(normalized):
+                continue
             info = stats if isinstance(stats, dict) else {}
             out[normalized] = {
                 "reads": max(1, int(info.get("reads") or 1)),
@@ -1711,7 +2072,15 @@ class LocomoOptimizer:
         raw = tool_access.get("files_written") if isinstance(tool_access, dict) else {}
         if not isinstance(raw, dict):
             return []
-        return sorted({self._bandit_normalize_access_path(str(path)) for path in raw})
+        return sorted(
+            {
+                normalized
+                for path in raw
+                if self._bandit_is_trackable_path(
+                    normalized := self._bandit_normalize_access_path(str(path))
+                )
+            }
+        )
 
     def _bandit_normalize_access_path(self, raw_path: str) -> str:
         text = raw_path.replace("\\", "/")
@@ -1722,6 +2091,20 @@ class LocomoOptimizer:
             if marker in text:
                 return marker.strip("/") + "/" + text.split(marker, 1)[1].lstrip("/")
         return text.lstrip("./")
+
+    def _bandit_is_trackable_path(self, path: str) -> bool:
+        if not path or "\n" in path or "\t" in path:
+            return False
+        if any(token in path for token in ("|", "[]", "(", ")", "@")):
+            return False
+        return (
+            path == "pending_eval.json"
+            or path in {"assignment.json", "workspace_manifest.json", "access_policy.json"}
+            or path.startswith("summaries/")
+            or path.startswith("reference_iterations/")
+            or path.startswith("source_snapshot/")
+            or path.startswith("generated/")
+        )
 
     def _changed_paths_from_diff(self, diff_path: Path) -> list[str]:
         if not diff_path.exists():
@@ -1877,7 +2260,8 @@ class LocomoOptimizer:
         candidates: list[CandidateResult],
     ) -> None:
         rows = []
-        best_ids = self._best_passrate_ids(candidates)
+        frontier_ids = self._quality_frontier_ids(candidates)
+        best_passrate_ids = self._best_passrate_ids(candidates)
         for candidate in sorted(
             candidates,
             key=lambda item: ((_candidate_iteration(item.candidate_id) or 0), item.candidate_id),
@@ -1896,7 +2280,8 @@ class LocomoOptimizer:
                     "build_tag": extra.get("build_tag"),
                     "result_path": candidate.result_path,
                     "iteration_dir": str(self._iteration_dir(iteration)),
-                    "is_best_passrate": candidate.candidate_id in best_ids,
+                    "is_best_passrate": candidate.candidate_id in best_passrate_ids,
+                    "is_quality_frontier": candidate.candidate_id in frontier_ids,
                 }
             )
         self.candidate_score_table_path.write_text(
@@ -1966,7 +2351,10 @@ class LocomoOptimizer:
         target = target_system or self.config.progressive_target_system
         for cell in get_target_cells(target):
             focus = ", ".join(cell.focus_functions) if cell.focus_functions else "all functions"
-            lines.append(f"{cell.name}: {cell.description} Focus areas: {focus}.")
+            lines.append(
+                f"{cell.name}: {cell.description} Focus areas: {focus}. "
+                f"Guidance: {cell.prompt_guidance}"
+            )
         if not lines:
             lines.append(
                 "global: improve memory construction, retrieval, evidence selection, "
@@ -2389,16 +2777,36 @@ class LocomoOptimizer:
         best = max(item.passrate for item in candidates)
         return {item.candidate_id for item in candidates if item.passrate == best}
 
+    def _quality_frontier(self, candidates: list[CandidateResult]) -> list[CandidateResult]:
+        if not candidates:
+            return []
+        by_id = {item.candidate_id: item for item in candidates}
+        points = [
+            ParetoPoint(
+                candidate_id=item.candidate_id,
+                scaffold_name=item.scaffold_name,
+                passrate=item.passrate,
+                token_consuming=item.token_consuming,
+                avg_token_consuming=item.avg_token_consuming,
+                average_score=item.average_score,
+                result_path=item.result_path,
+                config=item.config,
+            )
+            for item in candidates
+        ]
+        return [by_id[point.candidate_id] for point in pareto_frontier(points)]
+
+    def _quality_frontier_ids(self, candidates: list[CandidateResult]) -> set[str]:
+        return {item.candidate_id for item in self._quality_frontier(candidates)}
+
+    def _best_quality_value(self, candidates: list[CandidateResult]) -> float:
+        return max((_candidate_quality_value(item) for item in candidates), default=0.0)
+
     def _save_best_candidates(self, candidates: list[CandidateResult]) -> None:
         self.frontier_path.parent.mkdir(parents=True, exist_ok=True)
-        best_ids = self._best_passrate_ids(candidates)
         payload = [
             item.to_dict()
-            for item in sorted(
-                candidates,
-                key=lambda item: (-item.passrate, item.token_consuming, item.candidate_id),
-            )
-            if item.candidate_id in best_ids
+            for item in self._quality_frontier(candidates)
         ]
         self.frontier_path.write_text(
             json.dumps(payload, indent=2, ensure_ascii=False),
@@ -2532,7 +2940,11 @@ MemoOptimizer = LocomoOptimizer
 
 
 def _candidate_score(item: CandidateResult) -> tuple[float, int, str]:
-    return (item.passrate, -item.token_consuming, item.candidate_id)
+    return (item.passrate, item.average_score, -item.token_consuming, item.candidate_id)
+
+
+def _candidate_quality_value(item: CandidateResult) -> float:
+    return item.passrate
 
 
 def _candidate_best_rank(item: CandidateResult) -> tuple[float, float, int, str]:
@@ -2616,3 +3028,10 @@ def _dedupe_tuple(values: tuple[str, ...]) -> tuple[str, ...]:
             seen.add(item)
             out.append(item)
     return tuple(out)
+
+
+def _docker_mount_container_path(spec: str) -> str:
+    parts = str(spec).split(":")
+    if len(parts) < 2:
+        return ""
+    return parts[1].rstrip("/")

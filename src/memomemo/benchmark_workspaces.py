@@ -73,33 +73,22 @@ LONGMEMEVAL_WORKSPACE_SPEC = BenchmarkWorkspaceSpec(
     ),
 )
 
-
-TEXT_CLASSIFICATION_WORKSPACE_SPEC = BenchmarkWorkspaceSpec(
-    benchmark="text_classification",
-    primary_source_file="text_classification.py",
-    source_files=(
-        "model.py",
-        "pareto.py",
-        "schemas.py",
-        "text_classification.py",
-        "utils/__init__.py",
-        "utils/text.py",
-    ),
-)
-
-
-TAU3_BANKING_WORKSPACE_SPEC = BenchmarkWorkspaceSpec(
-    benchmark="tau3_banking_knowledge",
-    primary_source_file="tau_agents/banking_knowledge_base_agent.py",
+SWEBENCH_WORKSPACE_SPEC = BenchmarkWorkspaceSpec(
+    benchmark="swebench",
+    primary_source_file="swebench.py",
     source_files=(
         "__init__.py",
+        "benchmark_tasks.py",
+        "benchmark_workspaces.py",
+        "claude_runner.py",
+        "model.py",
+        "optimizer.py",
         "pareto.py",
+        "post_eval.py",
+        "proposer_prompt.py",
         "schemas.py",
-        "tau_banking.py",
-        "tau_agents/__init__.py",
-        "tau_agents/banking_knowledge_base_agent.py",
-        "tau_agent_runtime/__init__.py",
-        "tau_agent_runtime/base_agent.py",
+        "swebench.py",
+        "swebench_optimizer.py",
     ),
 )
 

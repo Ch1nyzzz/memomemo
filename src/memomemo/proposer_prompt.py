@@ -5,6 +5,31 @@ from __future__ import annotations
 from pathlib import Path
 
 
+def _optimization_subject(target_system: str) -> str:
+    """Return a short phrase for what the proposer is optimizing."""
+
+    normalized = target_system.lower()
+    if normalized in {"mini_swe_agent_source", "mini_swe_agent", "minisweagent"}:
+        return "source-backed coding agent control loop"
+    return "memory layer"
+
+
+def _candidate_scaffold_name(target_system: str) -> str:
+    """Return the scaffold/agent name shown in the candidate JSON example."""
+
+    if target_system.lower().endswith("_source"):
+        return target_system
+    return f"{target_system}_source"
+
+
+def _default_source_project_path(source_snapshot_dir: Path, target_system: str) -> str:
+    """Return the source path candidates should point at in pending_eval.json."""
+
+    if target_system.lower() in {"mini_swe_agent_source", "mini_swe_agent", "minisweagent"}:
+        return f"{source_snapshot_dir}/candidate/upstream_source/mini-swe-agent"
+    return f"{source_snapshot_dir}/candidate/project_source"
+
+
 def build_progressive_proposer_prompt(
     *,
     run_id: str,
@@ -22,6 +47,7 @@ def build_progressive_proposer_prompt(
     split: str,
     limit: int,
     selection_policy: str = "progressive",
+    bandit_policy: dict[str, object] | None = None,
     benchmark_name: str = "LOCOMO conversational-memory QA",
     raw_data_policy: str = "raw LOCOMO data",
 ) -> str:
@@ -48,18 +74,110 @@ overall system-level redesign:
             return str(path)
 
     refs = ", ".join(f"iter_{item:03d}" for item in reference_iterations) or "none"
+    if selection_policy == "progressive" and budget in {"low", "medium"}:
+        best_count = 3 if budget == "medium" else 1
+        best_refs = reference_iterations[:best_count]
+        worst_refs = reference_iterations[best_count:]
+        best_label = ", ".join(f"iter_{item:03d}" for item in best_refs) or "none"
+        worst_label = ", ".join(f"iter_{item:03d}" for item in worst_refs) or "none"
+        reference_role_note = (
+            f"- Progressive reference roles: best iteration(s): `{best_label}`; "
+            f"worst iteration: `{worst_label}`.\n"
+        )
+    elif selection_policy == "progressive":
+        reference_role_note = (
+            "- Progressive reference roles: high budget includes all available raw "
+            "reference iterations; use summaries to identify best and worst.\n"
+        )
+    elif selection_policy == "bandit" and bandit_policy:
+        best_iter_list = bandit_policy.get("best_iterations") or []
+        worst_iter_value = bandit_policy.get("worst_iteration")
+        best_label = (
+            ", ".join(f"iter_{int(item):03d}" for item in best_iter_list)
+            if best_iter_list
+            else "none"
+        )
+        worst_label = (
+            f"iter_{int(worst_iter_value):03d}"
+            if isinstance(worst_iter_value, int)
+            else "none"
+        )
+        reference_role_note = (
+            f"- Bandit reference roles: best iteration(s): `{best_label}`; "
+            f"worst iteration: `{worst_label}`.\n"
+        )
+    else:
+        reference_role_note = ""
+    bandit_section = ""
+    if selection_policy == "bandit":
+        policy = bandit_policy or {}
+
+        def listed(name: str) -> str:
+            values = policy.get(name)
+            if not isinstance(values, (list, tuple)) or not values:
+                return "none"
+            return ", ".join(f"`{item}`" for item in values[:12])
+
+        trace_scope = str(policy.get("trace_scope") or "last1")
+        bandit_section = f"""
+## Bandit Context Policy
+
+This iteration uses online file-utility estimates to suggest where to start.
+Begin with the compact summaries (`candidate_score_table.json`,
+`retrieval_diagnostics_summary.json`, `diff_summary.jsonl`). Read
+`evolution_summary.jsonl` and `best_candidates.json` whenever you need to trace
+cross-iteration patterns or identify a strong parent to build on.
+
+The hot/other lists below are advisory and reflect historical reads only;
+they do not restrict what you may read. If a file under "Other tracked files"
+fills a diagnostic gap, read it.
+
+- Trace scope: `{trace_scope}`
+- Hot files to inspect first: {listed("hot_files")}
+- Other tracked files (read on demand if they fill a diagnostic gap): {listed("warm_files")}
+"""
     refs_json = ", ".join(str(item) for item in reference_iterations)
     pending_eval_display = show(pending_eval_path)
     summaries_display = show(summaries_dir)
     reference_display = show(reference_iterations_dir)
     source_snapshot_display = show(source_snapshot_dir)
     generated_display = show(generated_dir)
-
-    _ = (budget, selection_policy)
+    optimization_subject = _optimization_subject(target_system)
+    candidate_scaffold_name = _candidate_scaffold_name(target_system)
+    default_source_project_path = _default_source_project_path(
+        Path(source_snapshot_display),
+        target_system,
+    )
+    is_mini_swe_agent = target_system.lower() in {
+        "mini_swe_agent_source",
+        "mini_swe_agent",
+        "minisweagent",
+    }
+    source_path_note = (
+        "`extra.source_project_path` must point to the edited mini-SWE-agent "
+        "snapshot under `source_snapshot/candidate/upstream_source/mini-swe-agent`."
+        if is_mini_swe_agent
+        else "`extra.source_project_path` must point to the edited snapshot project source "
+        "when files under `project_source/src/memomemo` are modified."
+    )
+    mini_swe_source_note = (
+        f"- `{source_snapshot_display}/candidate/upstream_source/mini-swe-agent/` — "
+        "primary editable mini-SWE-agent source tree for coding-agent mechanisms.\n"
+        if is_mini_swe_agent
+        else ""
+    )
+    mini_swe_edit_note = (
+        "\nFor mini-SWE-agent candidates, edit "
+        f"`{source_snapshot_display}/candidate/upstream_source/mini-swe-agent/**` "
+        "for agent control-loop, prompt/config, action parsing, verification, or "
+        "submission behavior, and point `extra.source_project_path` at that tree.\n"
+        if is_mini_swe_agent
+        else ""
+    )
 
     return f"""# OptiHarness Proposer — iteration {iteration}
 
-You are optimizing the memory layer for {benchmark_name}.
+You are optimizing the {optimization_subject} for {benchmark_name}.
 
 Run exactly one iteration. The outer OptiHarness harness will import and evaluate
 the candidate after this session exits. Do not run the full harness evaluation.
@@ -72,6 +190,7 @@ the candidate after this session exits. Do not run the full harness evaluation.
 - Eval limit: `{limit}` (`0` means full split)
 - Cumulative summaries: `{summaries_display}/`
 - Raw reference iterations: `{reference_display}/` ({refs})
+{reference_role_note}
 - Writable clean source snapshot: `{source_snapshot_display}/candidate/`
 - Generated wrapper directory: `{generated_display}/`
 - Required output: `{pending_eval_display}`
@@ -84,13 +203,16 @@ from the clean source.
 
 ## Objective
 
-Primary objective: maximize `passrate`.
+Primary objective: expand the quality Pareto frontier over `passrate` and
+`average_score`.
 
-Only optimize `passrate`. `average_score` and `token_consuming` are reported
-diagnostics, but they are not optimization objectives. Do not reduce recall
-solely to save tokens. Compression, filtering, reranking, and context budgeting
-are valid when they are expected to improve answer quality by removing noise or
-surfacing stronger evidence.
+Optimize both pass/fail reliability and partial-answer quality. `passrate` is
+the primary final metric, but `average_score` is an optimization objective
+because it captures near misses and often tracks generalization better than a
+single threshold. `token_consuming` is a reported diagnostic, not an objective.
+Do not reduce recall solely to save tokens. Compression, filtering, reranking,
+and context budgeting are valid when they are expected to improve answer
+quality by removing noise or surfacing stronger evidence.
 
 Optimize for expected generalization, not the reported training split alone.
 Use raw task traces to identify failure modes, recurring evidence gaps, and
@@ -101,12 +223,14 @@ modes; do not encode task-specific answers, names, dates, or scorer quirks into
 runtime behavior.
 
 {focus_section}
+{bandit_section}
 
 ## Available Files
 
 - `{summaries_display}/evolution_summary.jsonl` — full cumulative event history
   through the previous iteration.
-- `{summaries_display}/best_candidates.json` — current best passrate candidates.
+- `{summaries_display}/best_candidates.json` — current passrate/average_score
+  quality Pareto frontier candidates.
 - `{summaries_display}/candidate_score_table.json` — compact metrics for all
   evaluated candidates.
 - `{summaries_display}/retrieval_diagnostics_summary.json` — cumulative failure
@@ -123,6 +247,7 @@ runtime behavior.
   clean project source used for diffing and policy checks.
 - `{source_snapshot_display}/candidate/upstream_source/` — copied upstream
   source when available.
+{mini_swe_source_note}
 - `{generated_display}/` — optional importable wrapper modules for this
   iteration.
 
@@ -148,6 +273,7 @@ All copied project source under
 `{source_snapshot_display}/candidate/project_source/src/memomemo/**` is editable
 for this candidate, including scaffolds, base classes, model/prompt helpers,
 dynamic-loading helpers, and utils.
+{mini_swe_edit_note}
 
 Source-backed baseline memories and source bases are read-only and expensive
 to rebuild. If your source edit changes build/database-construction logic or
@@ -179,7 +305,7 @@ Schema:
   "candidates": [
     {{
       "name": "short_unique_name",
-      "scaffold_name": "{target_system}_source",
+      "scaffold_name": "{candidate_scaffold_name}",
       "top_k": 8,
       "window": 1,
       "source_family": "{target_system}",
@@ -187,9 +313,9 @@ Schema:
       "build_tag": "stable_build_identifier",
       "source_snapshot_path": "{source_snapshot_display}",
       "extra": {{
-        "source_project_path": "{source_snapshot_display}/candidate/project_source"
+        "source_project_path": "{default_source_project_path}"
       }},
-      "hypothesis": "why this should improve passrate",
+      "hypothesis": "why this should improve passrate and/or average_score",
       "changes": "brief implementation summary"
     }}
   ]
@@ -200,10 +326,9 @@ Notes:
 
 - The `candidates` array must contain exactly one candidate.
 - `top_k` must be a single integer.
-- Use a source-backed scaffold such as `memgpt_source` when editing the copied
+- Use a source-backed scaffold such as `{candidate_scaffold_name}` when editing the copied
   scaffold source.
-- `extra.source_project_path` must point to the edited snapshot project source
-  when files under `project_source/src/memomemo` are modified.
+- {source_path_note}
 - If you create a wrapper module in `{generated_display}`, keep it small and
   route source-backed mechanisms through the clean edited snapshot.
 - `reference_iterations` records the raw bundles available for diagnosis; it is
