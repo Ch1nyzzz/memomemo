@@ -196,9 +196,39 @@ not preserve the same Read-tool structure, and docs-only rows cannot be
 reconstructed per iteration. The auto-budget sample covers 150 proposer
 iterations: LoCoMo progressive r1/r2, LoCoMo bandit r1/r2, and LongMemEval
 progressive r1. The force-budget sample covers 180 proposer iterations from
-the claudekimi `force=low` / `force=high` ablations.
+the claudekimi `force=low` / `force=high` ablations. The primary table below
+combines both sources by **actual budget tier**. Auto-budget rows tell us what
+the policy naturally chooses during optimization; force-budget rows add
+controlled exposure to a tier. The force rows are evidence about the tier's
+behavior, not a replacement for the auto-budget distribution.
 
-Per-budget behavior in auto-budget runs:
+Combined auto + force behavior by actual budget:
+
+| policy | budget | iters | tools/propose | reads/propose | lines/propose | unique files/propose | source reads/propose | summary reads/propose | ref reads/propose | ref read share | ref lines/propose | best reads/propose |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| bandit | low | 62 | 37.40 | 21.21 | 2,326.2 | 15.58 | 11.21 | 7.87 | 0.02 | 0.1% | 0.0 | 0.00 |
+| bandit | medium | 22 | 49.23 | 27.59 | 3,252.2 | 19.23 | 10.91 | 6.59 | 8.00 | 29.0% | 1,032.6 | 4.86 |
+| bandit | high | 96 | 48.83 | 28.14 | 4,087.9 | 20.34 | 10.22 | 5.48 | 10.44 | 37.1% | 1,845.2 | 7.97 |
+| progressive | low | 84 | 45.06 | 25.81 | 3,486.7 | 18.36 | 9.70 | 6.62 | 7.38 | 28.6% | 1,350.5 | NA |
+| progressive | medium | 8 | 59.50 | 27.62 | 3,585.0 | 19.12 | 11.88 | 5.00 | 8.50 | 30.8% | 1,408.1 | NA |
+| progressive | high | 58 | 52.14 | 30.28 | 4,000.8 | 20.60 | 10.19 | 6.10 | 11.86 | 39.2% | 1,846.6 | NA |
+
+The key pattern is that budget mostly changes *reference-history exposure*,
+not source-code reading. Source reads stay near 10-12 per propose across
+budgets. What changes is the reference-iteration channel: bandit moves from
+almost no ref reads at low (0.02/propose) to 8.00 at medium and 10.44 at high;
+progressive moves from 7.38 at low to 8.50 at medium and 11.86 at high. The
+line volume shows the same pattern. High budget is therefore not merely "more
+files"; it is specifically more iteration-history reading.
+
+For bandit, this also directly increases reads of policy-labelled best
+iterations: best-iteration reads are 0.00/propose at low, 4.86/propose at
+medium, and 7.97/propose at high. This supports the mechanism-level
+interpretation that the policy's best-iteration pointers are an attention
+prior. The auto-only and force-only splits below show where the combined
+numbers come from.
+
+Auto-budget behavior only:
 
 | policy | budget | iters | tools/propose | reads/propose | lines/propose | unique files/propose | source reads/propose | summary reads/propose | ref reads/propose | ref read share | ref lines/propose | best reads/propose |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
@@ -209,23 +239,7 @@ Per-budget behavior in auto-budget runs:
 | progressive | medium | 8 | 59.50 | 27.62 | 3,585.0 | 19.12 | 11.88 | 5.00 | 8.50 | 30.8% | 1,408.1 | NA |
 | progressive | high | 58 | 52.14 | 30.28 | 4,000.8 | 20.60 | 10.19 | 6.10 | 11.86 | 39.2% | 1,846.6 | NA |
 
-The key pattern is that budget mostly changes *reference-history exposure*,
-not source-code reading. Source reads stay near 10-12 per propose across
-budgets. What changes is the reference-iteration channel: progressive rises
-from 6.79 ref reads/propose at low to 11.86 at high; bandit rises from 8.00
-at medium to 11.75 at high. The line volume shows the same pattern. High
-budget is therefore not merely "more files"; it is specifically more
-iteration-history reading.
-
-For bandit, this also directly increases reads of policy-labelled best
-iterations: best-iteration reads move from 4.86/propose at medium to
-8.53/propose at high. This supports the mechanism-level interpretation that
-the policy's best-iteration pointers are an attention prior. Low-budget
-bandit has only two auto-budget observations in this sample and both are
-startup iterations with no reference history, so it should not be generalized
-on its own.
-
-Force-budget ablations show the same distributional shift more cleanly:
+Force-budget behavior only:
 
 | policy | forced budget | iters | tools/propose | reads/propose | lines/propose | unique files/propose | source reads/propose | summary reads/propose | ref reads/propose | ref read share | ref lines/propose | best reads/propose |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
@@ -233,13 +247,14 @@ Force-budget ablations show the same distributional shift more cleanly:
 | bandit | high | 60 | 47.57 | 27.27 | 4,069.2 | 20.03 | 10.13 | 5.47 | 9.65 | 35.4% | 1,871.3 | 7.63 |
 | progressive | low | 60 | 46.28 | 26.30 | 3,618.2 | 18.23 | 9.57 | 7.08 | 7.62 | 29.0% | 1,378.4 | NA |
 
-Bandit `force=low` almost eliminates reference-iteration reads and shifts the
-proposer toward source files plus summaries. Bandit `force=high` opens the
-iteration-history channel: unique files rise 15.58 -> 20.03, total read lines
-rise 2,334.8 -> 4,069.2, and reference reads rise 0.02 -> 9.65 per propose.
-That behavioral change matches the result split in `PIPELINE.md`: LoCoMo
-benefits from adaptive access to medium/high history, while LongMemEval's best
-bandit result comes from keeping the UCB file prior but forcing low budget.
+The auto-only split confirms the same tier ordering while preserving the
+natural policy schedule: medium and high expose and attract much more
+iteration-history reading than low. The force-only split is the controlled
+ablation: bandit `force=low` almost eliminates reference-iteration reads,
+while bandit `force=high` opens the iteration-history channel. That behavioral
+change matches the result split in `PIPELINE.md`: LoCoMo benefits from
+adaptive access to medium/high history, while LongMemEval's best bandit result
+comes from keeping the UCB file prior but forcing low budget.
 
 The practical interpretation is budget-dependent:
 
