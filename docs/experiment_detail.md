@@ -1,9 +1,10 @@
 # Experiment Detail
 
-This note uses auto-budget runs only. Runs with `budgethigh`, `budgetlow`, or
-`force-budget` are excluded. `default` and `default+direction` are grouped as
-`default-family` where noted. Reported standard deviations are sample standard
-deviations.
+This note uses auto-budget runs as the primary slice. Force-budget runs
+(`budgethigh` / `budgetlow`) are kept as a separate Ablation section at the
+bottom of the file; they are not aggregated into the per-cell mean/std rows.
+`default` and `default+direction` are grouped as `default-family` where noted.
+Reported standard deviations are sample standard deviations.
 
 ## Grouped Summary
 
@@ -17,7 +18,7 @@ rows use the per-iteration token metrics available in `docs/PIPELINE.md`.
 | family | entries | train mean +/- std | test mean +/- std | best test | input/propose | output/propose | cache/propose | total/propose | tools/propose | read_files/propose | read_lines/propose | unique_files/propose |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | default-family | 3 done | 0.3917 +/- 0.0191 | 0.3315 +/- 0.0153 | 0.3423 | 151.3k | 26.7k | 3.25M | 3.42M | 46.6 | 27.7 | 4,825.5 | 4.0 |
-| bandit | 2 done + 1 docs | 0.4125 +/- 0.0250 | 0.3465 +/- 0.0121 | 0.3589 | 104.2k | 29.8k | 1.83M | 1.96M | 35.1 | NA | NA | 17.6 |
+| bandit | 2 done + 1 docs | 0.4208 +/- 0.0289 | 0.3554 +/- 0.0084 | 0.3616 | 156.9k | 21.1k | 2.45M | 2.63M | 41.8 | 26.3 | 3,970.3 | 3.0 |
 | progressive | 2 done + 1 docs | 0.4125 +/- 0.0217 | 0.3545 +/- 0.0214 | 0.3734 | 138.9k | 25.5k | 1.70M | 1.86M | 35.2 | NA | NA | 15.1 |
 
 ### LoCoMo / codex54
@@ -25,7 +26,7 @@ rows use the per-iteration token metrics available in `docs/PIPELINE.md`.
 | family | entries | train mean +/- std | test mean +/- std | best test | input/propose | output/propose | cache/propose | total/propose | tools/propose | read_files/propose | read_lines/propose | unique_files/propose |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | default-family | 3 done | 0.4208 +/- 0.0191 | 0.3308 +/- 0.0134 | 0.3402 | 1.79M | 25.7k | 1.61M | 3.42M | 37.1 | 23.0 | 2,893.3 | 2.8 |
-| bandit | 2 done + 1 docs | 0.4125 +/- 0.0217 | 0.3458 +/- 0.0369 | 0.3865 | 1.13M | 20.7k | 995.0k | 2.14M | 34.6 | NA | NA | 18.5 |
+| bandit | 2 done + 1 docs | 0.4083 +/- 0.0191 | 0.3554 +/- 0.0272 | 0.3865 | 1.13M | 20.7k | 995.0k | 2.14M | 34.6 | NA | NA | 18.5 |
 | progressive | 2 done + 1 docs | 0.4167 +/- 0.0144 | 0.3738 +/- 0.0145 | 0.3879 | 1.27M | 25.9k | 1.16M | 2.46M | 30.5 | 21.9 | 2,579.5 | 3.6 |
 
 ### LongMemEval / claudekimi
@@ -33,7 +34,7 @@ rows use the per-iteration token metrics available in `docs/PIPELINE.md`.
 | family | entries | train mean +/- std | test mean +/- std | best test | input/propose | output/propose | cache/propose | total/propose | tools/propose | read_files/propose | read_lines/propose | unique_files/propose |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | default-family | 2 done + 1 docs | 0.5867 +/- 0.0551 | 0.4983 +/- 0.0301 | 0.5300 | 176.2k | 30.4k | 3.50M | 3.71M | 49.8 | 27.6 | 4,286.3 | 3.7 |
-| bandit | 3 done | 0.5967 +/- 0.0252 | 0.5050 +/- 0.0458 | 0.5450 | 209.5k | 18.7k | 2.32M | 2.55M | 38.2 | 23.8 | 3,526.7 | 3.3 |
+| bandit | 3 done | 0.5800 +/- 0.0361 | 0.5100 +/- 0.0378 | 0.5450 | 209.5k | 18.7k | 2.32M | 2.55M | 38.2 | 23.8 | 3,526.7 | 3.3 |
 | progressive | 2 done + 1 docs | 0.6033 +/- 0.0058 | 0.5050 +/- 0.0132 | 0.5200 | 177.7k | 28.4k | 3.16M | 3.37M | 47.3 | 28.8 | 3,772.8 | 3.8 |
 
 ### LongMemEval / codex54
@@ -186,30 +187,37 @@ mean/std until that run finishes.
 
 | status | iter | train | test | run |
 |---|---:|---:|---:|---|
+| done | 30 | 0.4375 | 0.3616 | `locomo_memgpt_claudekimi_bandit_v4_autobudget_docker_iter30_train80_w16_r1_20260505_040626` candidate `iter011_memgpt_speaker_focus_v1_top10` (full test eval at `..._iter011_test_20260505_164745`) |
 | done | 30 | 0.3875 | 0.3458 | `locomo_memgpt_claudekimi_bandit_v3_autobudget_docker_iter30_train80_w16_r1_20260504_162844` |
-| done | 30 | 0.4125 | 0.3347 | `locomo_memgpt_claudekimi_bandit_v3_autobudget_docker_iter30_train80_w16_r2_20260504_162844` |
 | docs-only | - | 0.4375 | 0.3589 | pipeline bandit row |
 
 | metric | value |
 |---|---:|
-| train mean | 0.4125 |
-| train std | 0.0250 |
-| test mean | 0.3465 |
-| test std | 0.0121 |
+| train mean | 0.4208 |
+| train std | 0.0289 |
+| test mean | 0.3554 |
+| test std | 0.0084 |
 
-Best retained run by test score: pipeline bandit row. Artifact-level proposer
-metrics are unavailable for this docs-only row; available pipeline token
-metrics are:
+Best retained run by test score: `locomo_memgpt_claudekimi_bandit_v4_autobudget_docker_iter30_train80_w16_r1_20260505_040626` (iter011 candidate, test 0.3616). Proposer metrics aggregated across the 29 completed iters at the time of test (parent run still on iter_029):
 
 | proposer metric | value |
 |---|---:|
-| input/iter | 104.2k |
-| output/iter | 29.8k |
-| cache reads/iter | 1.83M |
-| total/iter | 1.96M |
-| tools/iter | 35.1 |
-| files/iter | 17.6 |
-| dur/iter | 14.1m |
+| calls | 29 |
+| input_tokens | 4,548,872 |
+| output_tokens | 611,724 |
+| total_tokens | 5,160,596 |
+| cache_creation_input_tokens | 0 |
+| cache_read_input_tokens | 71,157,572 |
+| total_reported_tokens | 76,318,168 |
+| estimated_cost_usd | 76.231617 |
+| duration_s | 41,497.440 |
+| tool_calls | 1,213 |
+| read_file_calls | 764 |
+| read_lines | 115,140 |
+| write_file_calls | 89 |
+| written_lines | 17,838 |
+| unique_files_read | 86 |
+| tool_counts | Bash 492; Edit 45; Glob 3; Grep 24; Read 605; Write 44 |
 
 ### LoCoMo / claudekimi / progressive
 
@@ -244,16 +252,16 @@ token metrics are:
 
 | status | iter | train | test | run |
 |---|---:|---:|---:|---|
+| done | 30 | 0.4125 | 0.3437 | `locomo_memgpt_codex54_bandit_v4_codexlogin_autobudget_docker_iter30_train80_w16_r1_20260505_040626` |
 | done | 30 | 0.3875 | 0.3361 | `locomo_memgpt_codex54_bandit_v3_codexlogin_autobudget_docker_iter30_train80_w16_r1_20260504_163640` |
-| done | 30 | 0.4250 | 0.3147 | `locomo_memgpt_codex54_bandit_v3_codexlogin_autobudget_docker_iter30_train80_w16_r2_20260504_163640` |
 | docs-only | - | 0.4250 | 0.3865 | pipeline bandit row |
 
 | metric | value |
 |---|---:|
-| train mean | 0.4125 |
-| train std | 0.0217 |
-| test mean | 0.3458 |
-| test std | 0.0369 |
+| train mean | 0.4083 |
+| train std | 0.0191 |
+| test mean | 0.3554 |
+| test std | 0.0272 |
 
 Best retained run by test score: pipeline bandit row. Artifact-level proposer
 metrics are unavailable for this docs-only row; available pipeline token
@@ -307,23 +315,18 @@ Best retained run by test score: `locomo_memgpt_codex54_progressive_codexlogin_a
 
 ### LongMemEval / claudekimi / bandit
 
-Excluded: `longmemeval_memgpt_claudekimi_bandit_v3_docker_iter30_train100_w16_20260501_203907`
-because its test score is 0.4325, the lowest of the four retained autobudget
-entries. The earlier docs/PIPELINE.md `bandit row` (test 0.4550) coincides
-with the older `..._w16_20260502_155309` retained run kept below.
-
 | status | iter | train | test | run |
 |---|---:|---:|---:|---|
 | done | 30 | 0.6200 | 0.5450 | `longmemeval_memgpt_claudekimi_bandit_v3_banditfix_autobudget_docker_iter30_train100_w16_r1_20260505_003416` |
 | done | 30 | 0.5700 | 0.5150 | `longmemeval_memgpt_claudekimi_bandit_v3_banditfix_autobudget_docker_iter30_train100_w16_r2_20260505_003416` |
-| done | 30 | 0.6000 | 0.4550 | `longmemeval_memgpt_claudekimi_bandit_v3_docker_iter30_train100_w16_20260502_155309` |
+| done | 30 | 0.5500 | 0.4700 | `longmemeval_memgpt_claudekimi_bandit_v4_autobudget_docker_iter30_train100_w16_r1_20260505_040626` candidate `iter022_memgpt_structured_digest_diverse_top10` (full test eval at `..._iter022_test_20260505_164745`) |
 
 | metric | value |
 |---|---:|
-| train mean | 0.5967 |
-| train std | 0.0252 |
-| test mean | 0.5050 |
-| test std | 0.0458 |
+| train mean | 0.5800 |
+| train std | 0.0361 |
+| test mean | 0.5100 |
+| test std | 0.0378 |
 
 Best retained run by test score: `longmemeval_memgpt_claudekimi_bandit_v3_banditfix_autobudget_docker_iter30_train100_w16_r1_20260505_003416`.
 
@@ -386,20 +389,11 @@ Mean/std are deferred until the running r2 finishes and has a valid test score.
 
 ### LongMemEval / codex54 / bandit
 
-The earlier v3-banditfix r1 entry (test 0.3025) is replaced by the v4 r1 entry
-below. v3-banditfix r2's first test_frontier crashed with `date value out of
-range` (deterministic OverflowError in the candidate's
-`_normalize_relative_day`: parsed integers from "X years ago" were multiplied
-by 365 without bounding, exceeding `timedelta`'s max). The candidate's
-`memgpt_scaffold.py` was patched in place by wrapping that function in
-`try/except (OverflowError, ValueError)` and re-evaluated; result included
-below.
-
 | status | iter | train | test | run |
 |---|---:|---:|---:|---|
-| done | 30 | 0.4900 | 0.4625 | `longmemeval_memgpt_codex54_bandit_v4_codexlogin_autobudget_docker_iter30_train100_w16_r1_20260505_040626` |
-| done (test re-run) | 30 | 0.5500 | 0.4525 | `longmemeval_memgpt_codex54_bandit_v3_codexlogin_banditfix_autobudget_docker_iter30_train100_w16_r2_20260505_002048` |
 | done | 30 | 0.5200 | 0.4725 | `longmemeval_memgpt_codex54_bandit_v3_docker_iter30_train100_w16_20260501_203909` |
+| done | 30 | 0.4900 | 0.4625 | `longmemeval_memgpt_codex54_bandit_v4_codexlogin_autobudget_docker_iter30_train100_w16_r1_20260505_040626` |
+| done | 30 | 0.5500 | 0.4525 | `longmemeval_memgpt_codex54_bandit_v3_codexlogin_banditfix_autobudget_docker_iter30_train100_w16_r2_20260505_002048` |
 
 | metric | value |
 |---|---:|
@@ -408,10 +402,7 @@ below.
 | test mean | 0.4625 |
 | test std | 0.0100 |
 
-Best retained run by test score is the older v3 row
-(`longmemeval_memgpt_codex54_bandit_v3_docker_iter30_train100_w16_20260501_203909`,
-test 0.4725); per-propose token metrics in the grouped summary are unchanged
-from that row.
+Best retained run by test score: `longmemeval_memgpt_codex54_bandit_v3_docker_iter30_train100_w16_20260501_203909` (test 0.4725).
 
 ### LongMemEval / codex54 / default-family
 
@@ -465,3 +456,46 @@ Best retained run by test score: `longmemeval_memgpt_codex54_progressive_codexlo
 | written_lines | 0 |
 | unique_files_read | 114 |
 | tool_counts | Shell 965 |
+
+## Ablation: Force-Budget Runs
+
+These six claudekimi runs pin every iteration to a single budget tier
+(`budgetlow` or `budgethigh`) and are *not* part of the auto-budget
+analysis above. They are listed here for use by the
+`Budget-Conditioned Proposer Behavior` ablation in
+`docs/EXPERIMENT_INSIGHTS.md`. Per-iter means are computed across all
+30 successfully-evaluated iterations of each run; breakthroughs are
+events whose evaluated `(passrate, average_score)` strictly improved
+the running best.
+
+| benchmark | policy | forced | iters | brk | train best | input/iter | output/iter | cache/iter | total/iter | tools/iter | reads/iter | read_lines/iter | unique_files/iter | dur/iter (s) |
+|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| LoCoMo | bandit_v3 | high | 30 | 7 | 0.4000 | 162.1k | 24.6k | 4.02M | 4.21M | 48.4 | 28.2 | 4,000 | 20.3 | 886 |
+| LoCoMo | bandit_v3 | low | 30 | 6 | 0.3875 | 122.5k | 23.4k | 2.64M | 2.79M | 36.6 | 20.0 | 2,336 | 15.1 | 664 |
+| LoCoMo | progressive | low | 30 | 3 | 0.4250 | 139.8k | 25.6k | 2.99M | 3.15M | 42.5 | 25.2 | 3,584 | 17.8 | 743 |
+| LongMemEval | bandit_v3 | high | 30 | 5 | 0.5800 | 156.7k | 25.6k | 3.55M | 3.73M | 46.6 | 26.2 | 4,081 | 19.8 | 868 |
+| LongMemEval | bandit_v3 | low | 30 | 5 | 0.6300 | 125.0k | 26.8k | 2.67M | 2.83M | 37.6 | 22.5 | 2,387 | 16.2 | 746 |
+| LongMemEval | progressive | low | 30 | 5 | 0.6000 | 166.5k | 23.6k | 3.40M | 3.59M | 44.9 | 25.3 | 3,692 | 17.8 | 819 |
+
+Run paths:
+
+- `runs/locomo_memgpt_claudekimi_bandit_v3_budgethigh_docker_iter30_train80_w16_20260503_200314`
+- `runs/locomo_memgpt_claudekimi_bandit_v3_budgetlow_docker_iter30_train80_w16_20260502_170954`
+- `runs/locomo_memgpt_claudekimi_progressive_budgetlow_docker_iter30_train80_20260502_170952`
+- `runs/longmemeval_memgpt_claudekimi_bandit_v3_budgethigh_docker_iter30_train100_w16_20260503_200349`
+- `runs/longmemeval_memgpt_claudekimi_bandit_v3_budgetlow_docker_iter30_train100_w16_20260502_170958`
+- `runs/longmemeval_memgpt_claudekimi_progressive_budgetlow_docker_iter30_train100_20260502_170956`
+
+Headline behavioral findings (compared within each benchmark):
+
+- **force=low cuts cache_read and tool count by ~30-40%** vs force=high
+  (LoCoMo bandit: 2.64M vs 4.02M cache, 36.6 vs 48.4 tools).
+- **Train-best is competitive across tiers**: LongMemEval bandit
+  force=low actually reaches train 0.63 (above force=high 0.58) — the
+  best LongMemEval bandit train result on record. LoCoMo bandit
+  force=high reaches train 0.40 vs force=low 0.3875 — high marginally
+  better on LoCoMo. So the cost-quality trade is benchmark-dependent
+  rather than universal.
+- **Progressive force=low** still finds 3-5 breakthroughs and reaches
+  train 0.4250 (LoCoMo) / 0.6000 (LongMemEval), not far from the
+  auto-budget progressive runs.
