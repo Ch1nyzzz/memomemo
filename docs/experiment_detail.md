@@ -44,6 +44,20 @@ rows use the per-iteration token metrics available in `docs/PIPELINE.md`.
 | bandit | 1 done + 2 running | pending | pending | 0.4725 | 1.13M | 24.6k | 1.03M | 2.18M | 34.8 | 24.7 | 2,879.6 | 2.1 |
 | progressive | 2 done + 1 docs | 0.5667 +/- 0.0379 | 0.4992 +/- 0.0275 | 0.5275 | 1.38M | 23.9k | 1.26M | 2.66M | 32.2 | 22.5 | 2,800.0 | 3.8 |
 
+### SWE-bench mini / claudekimi
+
+SWE-bench mini uses the DeepSeek v4 Flash solver and reports passrate on the
+trainfirst30 pool. The full500 column is the later candidate-level verified-set
+promotion from `docs/PIPELINE.md`. Local retained SWE-bench artifacts are
+currently `budgethigh` or fixed-source variants, so these rows are docs-only
+pipeline rows.
+
+| family | entries | trainfirst30 passrate mean +/- std | best trainfirst30 | best full500 | input/propose | output/propose | cache/propose | total/propose | tools/propose | read_files/propose | read_lines/propose | unique_files/propose |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| default-family | 2 docs | 0.5000 +/- 0.0000 | 0.5000 | 0.6100 | 167.3k | 29.4k | 4.58M | 4.78M | 63.5 | NA | NA | 24.2 |
+| progressive | 1 docs | 0.5333 | 0.5333 | 0.6200 | 141.8k | 29.7k | 3.61M | 3.78M | 61.0 | NA | NA | 23.6 |
+| bandit fixedsource | 1 docs | 0.5333 | 0.5333 | 0.6400 | 128.9k | 26.1k | 3.35M | 3.51M | 56.6 | NA | NA | 25.5 |
+
 ## LoCoMo / claudekimi / default-family
 
 Excluded: `locomo_memgpt_claudekimi_default_direction_docker_iter30_train80_20260502_154556`
