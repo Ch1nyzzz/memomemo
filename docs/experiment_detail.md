@@ -14,35 +14,35 @@ rows use the per-iteration token metrics available in `docs/PIPELINE.md`.
 
 ### LoCoMo / claudekimi
 
-| family | entries | train mean +/- std | test mean +/- std | best test | input/propose | output/propose | cache/propose | total/propose |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| default-family | 3 done | 0.3917 +/- 0.0191 | 0.3315 +/- 0.0153 | 0.3423 | 151.3k | 26.7k | 3.25M | 3.42M |
-| bandit | 2 done + 1 docs | 0.4125 +/- 0.0250 | 0.3465 +/- 0.0121 | 0.3589 | 104.2k | 29.8k | 1.83M | 1.96M |
-| progressive | 2 done + 1 docs | 0.4125 +/- 0.0217 | 0.3545 +/- 0.0214 | 0.3734 | 138.9k | 25.5k | 1.70M | 1.86M |
+| family | entries | train mean +/- std | test mean +/- std | best test | input/propose | output/propose | cache/propose | total/propose | tools/propose | read_files/propose | read_lines/propose | unique_files/propose |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| default-family | 3 done | 0.3917 +/- 0.0191 | 0.3315 +/- 0.0153 | 0.3423 | 151.3k | 26.7k | 3.25M | 3.42M | 46.6 | 27.7 | 4,825.5 | 4.0 |
+| bandit | 2 done + 1 docs | 0.4125 +/- 0.0250 | 0.3465 +/- 0.0121 | 0.3589 | 104.2k | 29.8k | 1.83M | 1.96M | 35.1 | NA | NA | 17.6 |
+| progressive | 2 done + 1 docs | 0.4125 +/- 0.0217 | 0.3545 +/- 0.0214 | 0.3734 | 138.9k | 25.5k | 1.70M | 1.86M | 35.2 | NA | NA | 15.1 |
 
 ### LoCoMo / codex54
 
-| family | entries | train mean +/- std | test mean +/- std | best test | input/propose | output/propose | cache/propose | total/propose |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| default-family | 2 done + 1 running | pending | pending | 0.3368 | 1.45M | 23.9k | 1.33M | 2.80M |
-| bandit | 2 done + 1 docs | 0.4125 +/- 0.0217 | 0.3458 +/- 0.0369 | 0.3865 | 1.13M | 20.7k | 995.0k | 2.14M |
-| progressive | 2 done + 1 docs | 0.4167 +/- 0.0144 | 0.3738 +/- 0.0145 | 0.3879 | 1.27M | 25.9k | 1.16M | 2.46M |
+| family | entries | train mean +/- std | test mean +/- std | best test | input/propose | output/propose | cache/propose | total/propose | tools/propose | read_files/propose | read_lines/propose | unique_files/propose |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| default-family | 2 done + 1 running | pending | pending | 0.3368 | 1.45M | 23.9k | 1.33M | 2.80M | 33.9 | 23.0 | 2,687.5 | 3.6 |
+| bandit | 2 done + 1 docs | 0.4125 +/- 0.0217 | 0.3458 +/- 0.0369 | 0.3865 | 1.13M | 20.7k | 995.0k | 2.14M | 34.6 | NA | NA | 18.5 |
+| progressive | 2 done + 1 docs | 0.4167 +/- 0.0144 | 0.3738 +/- 0.0145 | 0.3879 | 1.27M | 25.9k | 1.16M | 2.46M | 30.5 | 21.9 | 2,579.5 | 3.6 |
 
 ### LongMemEval / claudekimi
 
-| family | entries | train mean +/- std | test mean +/- std | best test | input/propose | output/propose | cache/propose | total/propose |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| default-family | 2 done + 1 docs | 0.5867 +/- 0.0551 | 0.4983 +/- 0.0301 | 0.5300 | 176.2k | 30.4k | 3.50M | 3.71M |
-| bandit | 2 done + 2 running | pending | pending | 0.4550 | 177.1k | 29.6k | 4.03M | 4.23M |
-| progressive | 1 done + 1 docs + 1 running | pending | pending | 0.5000 | 105.0k | 25.0k | 1.73M | 1.86M |
+| family | entries | train mean +/- std | test mean +/- std | best test | input/propose | output/propose | cache/propose | total/propose | tools/propose | read_files/propose | read_lines/propose | unique_files/propose |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| default-family | 2 done + 1 docs | 0.5867 +/- 0.0551 | 0.4983 +/- 0.0301 | 0.5300 | 176.2k | 30.4k | 3.50M | 3.71M | 49.8 | 27.6 | 4,286.3 | 3.7 |
+| bandit | 2 done + 2 running | pending | pending | 0.4550 | 177.1k | 29.6k | 4.03M | 4.23M | 50.7 | 32.8 | 3,816.9 | 3.5 |
+| progressive | 1 done + 1 docs + 1 running | pending | pending | 0.5000 | 105.0k | 25.0k | 1.73M | 1.86M | 33.6 | NA | NA | 16.3 |
 
 ### LongMemEval / codex54
 
-| family | entries | train mean +/- std | test mean +/- std | best test | input/propose | output/propose | cache/propose | total/propose |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| default-family | 1 done + 1 docs + 1 running | pending | pending | 0.5075 | 1.51M | 25.3k | 1.39M | 2.93M |
-| bandit | 1 done + 2 running | pending | pending | 0.4725 | 1.13M | 24.6k | 1.03M | 2.18M |
-| progressive | 2 done + 1 docs | 0.5667 +/- 0.0379 | 0.4992 +/- 0.0275 | 0.5275 | 1.38M | 23.9k | 1.26M | 2.66M |
+| family | entries | train mean +/- std | test mean +/- std | best test | input/propose | output/propose | cache/propose | total/propose | tools/propose | read_files/propose | read_lines/propose | unique_files/propose |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| default-family | 1 done + 1 docs + 1 running | pending | pending | 0.5075 | 1.51M | 25.3k | 1.39M | 2.93M | 33.9 | 22.5 | 2,487.0 | 2.7 |
+| bandit | 1 done + 2 running | pending | pending | 0.4725 | 1.13M | 24.6k | 1.03M | 2.18M | 34.8 | 24.7 | 2,879.6 | 2.1 |
+| progressive | 2 done + 1 docs | 0.5667 +/- 0.0379 | 0.4992 +/- 0.0275 | 0.5275 | 1.38M | 23.9k | 1.26M | 2.66M | 32.2 | 22.5 | 2,800.0 | 3.8 |
 
 ## LoCoMo / claudekimi / default-family
 
