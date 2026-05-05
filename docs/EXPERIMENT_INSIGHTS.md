@@ -153,3 +153,186 @@ curves:
 - default should not be mixed into budget-stage breakthrough counts, because
   default has no budget transition. Its breakthroughs are all `default-high`
   by construction.
+
+## Progressive Advantage: Fewer Files, Better Iteration Routing
+
+The "progressive wins because it sees more useful iteration context, not
+because it simply reads more files" hypothesis is supported for the retained
+claudekimi memory runs, but not uniformly for every proposer.
+
+On claudekimi memory benchmarks, progressive has both stronger test results
+and smaller file/tool footprints than the default-family rows:
+
+| benchmark | policy | test | tools/iter | files/iter | total/iter |
+|---|---|---:|---:|---:|---:|
+| LoCoMo | default | 0.3382 | 45.8 | 19.9 | 3.13M |
+| LoCoMo | default+direction | 0.3458 best frontier | 53.1 | 20.0 | 4.37M |
+| LoCoMo | progressive | **0.3734** | **35.2** | **15.1** | **1.86M** |
+| LongMemEval | default | 0.4700 | 39.6 | 18.4 | 2.27M |
+| LongMemEval | default+direction | 0.4950 rerun | 50.8 | 20.5 | 4.33M |
+| LongMemEval | progressive | **0.5000** | **33.6** | **16.3** | **1.86M** |
+
+This is a real behavioral difference: progressive does not win by widening
+the file-access surface. It exposes a narrower reference set, selected from
+the current optimization state, and the proposer spends its reads on those
+state-selected iterations. The later "Reference-Iteration Read Distribution"
+section shows the mechanism more directly: when policy-selected best
+iterations are labelled, those directories receive ~10-15x more reads per
+available slot than unmarked reference dirs.
+
+For codex54 the claim is weaker. LoCoMo codex54 progressive beats default on
+test (0.3589 vs 0.3368), but the file count is essentially tied (16.9 vs
+16.8 files/iter) and total proposer token volume is higher (4.66M vs 2.80M).
+So the robust claim is not "progressive always reads fewer files"; it is
+"progressive can improve test performance by routing attention toward
+selected best/worst iteration context, and on claudekimi memory runs that also
+comes with fewer files and lower gross token volume."
+
+## Budget-Conditioned Proposer Behavior
+
+This section uses artifact-level `agent/tool_access.json` traces from complete
+claudekimi memory runs only. Codex54 is excluded because its tool traces do
+not preserve the same Read-tool structure, and docs-only rows cannot be
+reconstructed per iteration. The auto-budget sample covers 150 proposer
+iterations: LoCoMo progressive r1/r2, LoCoMo bandit r1/r2, and LongMemEval
+progressive r1. The force-budget sample covers 180 proposer iterations from
+the claudekimi `force=low` / `force=high` ablations.
+
+Per-budget behavior in auto-budget runs:
+
+| policy | budget | iters | tools/propose | reads/propose | lines/propose | unique files/propose | source reads/propose | summary reads/propose | ref reads/propose | ref read share | ref lines/propose | best reads/propose |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| bandit | low | 2 | 31.00 | 16.50 | 2,068.0 | 15.50 | 9.50 | 5.50 | 0.00 | 0.0% | 0.0 | 0.00 |
+| bandit | medium | 22 | 49.23 | 27.59 | 3,252.2 | 19.23 | 10.91 | 6.59 | 8.00 | 29.0% | 1,032.6 | 4.86 |
+| bandit | high | 36 | 50.94 | 29.58 | 4,119.1 | 20.86 | 10.36 | 5.50 | 11.75 | 39.7% | 1,801.6 | 8.53 |
+| progressive | low | 24 | 42.00 | 24.58 | 3,157.9 | 18.67 | 10.04 | 5.46 | 6.79 | 27.6% | 1,280.8 | NA |
+| progressive | medium | 8 | 59.50 | 27.62 | 3,585.0 | 19.12 | 11.88 | 5.00 | 8.50 | 30.8% | 1,408.1 | NA |
+| progressive | high | 58 | 52.14 | 30.28 | 4,000.8 | 20.60 | 10.19 | 6.10 | 11.86 | 39.2% | 1,846.6 | NA |
+
+The key pattern is that budget mostly changes *reference-history exposure*,
+not source-code reading. Source reads stay near 10-12 per propose across
+budgets. What changes is the reference-iteration channel: progressive rises
+from 6.79 ref reads/propose at low to 11.86 at high; bandit rises from 8.00
+at medium to 11.75 at high. The line volume shows the same pattern. High
+budget is therefore not merely "more files"; it is specifically more
+iteration-history reading.
+
+For bandit, this also directly increases reads of policy-labelled best
+iterations: best-iteration reads move from 4.86/propose at medium to
+8.53/propose at high. This supports the mechanism-level interpretation that
+the policy's best-iteration pointers are an attention prior. Low-budget
+bandit has only two auto-budget observations in this sample and both are
+startup iterations with no reference history, so it should not be generalized
+on its own.
+
+Force-budget ablations show the same distributional shift more cleanly:
+
+| policy | forced budget | iters | tools/propose | reads/propose | lines/propose | unique files/propose | source reads/propose | summary reads/propose | ref reads/propose | ref read share | ref lines/propose | best reads/propose |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| bandit | low | 60 | 37.62 | 21.37 | 2,334.8 | 15.58 | 11.27 | 7.95 | 0.02 | 0.1% | 0.0 | 0.00 |
+| bandit | high | 60 | 47.57 | 27.27 | 4,069.2 | 20.03 | 10.13 | 5.47 | 9.65 | 35.4% | 1,871.3 | 7.63 |
+| progressive | low | 60 | 46.28 | 26.30 | 3,618.2 | 18.23 | 9.57 | 7.08 | 7.62 | 29.0% | 1,378.4 | NA |
+
+Bandit `force=low` almost eliminates reference-iteration reads and shifts the
+proposer toward source files plus summaries. Bandit `force=high` opens the
+iteration-history channel: unique files rise 15.58 -> 20.03, total read lines
+rise 2,334.8 -> 4,069.2, and reference reads rise 0.02 -> 9.65 per propose.
+That behavioral change matches the result split in `PIPELINE.md`: LoCoMo
+benefits from adaptive access to medium/high history, while LongMemEval's best
+bandit result comes from keeping the UCB file prior but forcing low budget.
+
+The practical interpretation is budget-dependent:
+
+- low budget is a source/summaries mode; it is cheap and good for local
+  candidate edits, but for bandit it largely removes historical iteration
+  evidence;
+- medium budget is the first tier where bandit best-iteration hints become
+  behaviorally active;
+- high budget mainly buys more reference-history reading, and especially more
+  reads of policy-labelled best iterations;
+- progressive's advantage on claudekimi is consistent with getting more value
+  from selected iteration context while reading fewer files overall than the
+  default-family baselines.
+
+## Reference-Iteration Read Distribution
+
+The adaptive policies do not always read fewer files than `default+direction`
+(see "Token Trend Context" above), but they redistribute *which* iteration
+directories the proposer attends to. This section quantifies that shift using
+the per-iteration `tool_access.json` traces from the kimi proposer runs on
+LongMemEval and LoCoMo. Codex5.4 runs are excluded because tool_uses are not
+logged for that proposer.
+
+Methodology. For every iteration we count, per Read tool call, which
+`reference_iterations/iter_NNN/` directory it lands in (if any). Each call also
+exposes a set of *available* `iter_NNN` directories under
+`workspace/reference_iterations/`. We then bucket each available directory by
+how the bandit policy labelled it (`best_iterations`, `worst_iteration`, other
+listed reference, or unlisted) and report **reads per available slot** across
+the run. The slot normalization removes the confound of "how many iter dirs
+were exposed".
+
+### Bandit best-iter hints concentrate attention strongly
+
+Two LongMemEval kimi `bandit_v3` runs, restricted to iterations whose policy
+included a non-empty `best_iterations` list:
+
+| run | bucket | slots | reads | reads/slot | lines/slot |
+|---|---|---:|---:|---:|---:|
+| mixed A | best-iter dirs | 58 | 124 | **2.14** | **513** |
+| mixed A | worst-iter dir | 24 | 11 | 0.46 | 87 |
+| mixed A | other ref dirs | 232 | 51 | 0.22 | 42 |
+| mixed B | best-iter dirs | 77 | 227 | **2.95** | **586** |
+| mixed B | worst-iter dir | 15 | 3 | 0.20 | 23 |
+| mixed B | other ref dirs | 233 | 47 | 0.20 | 11 |
+
+A `best`-tagged directory receives ~10–15× more Read calls per available slot
+than an unmarked reference directory, and ~50× more lines in mixed B. The
+`worst` directory is read at roughly the same rate as a random reference
+directory; on lines/slot it is *less* read than other refs in mixed B. The
+proposer selectively trusts the `best` hint and effectively ignores `worst`.
+
+### Without best/worst hints, attention defaults to recency
+
+For `default+direction` the policy exposes *all* prior iter dirs without any
+best/worst label. Bucketing the same reads-per-slot metric by recency of the
+exposed iter:
+
+| run | recent (last 3) | middle | early (first 3) |
+|---|---:|---:|---:|
+| LME default+direction A | 1.79 | 0.26 | 0.03 |
+| LME default+direction B | 1.30 | 0.48 | 0.00 |
+| LoCoMo default+direction A | 2.06 | 0.26 | 0.04 |
+
+Early iterations are read ~50–70× less often than the most recent three. With
+no policy hint, the proposer falls back to a strong recency prior.
+
+### Bandit pulls attention back into early and middle iters
+
+The same recency bucketing applied to LME bandit_v3 mixed B and the matched
+`default+direction` baseline:
+
+| bucket | bandit mixed B reads/slot | default+direction A reads/slot |
+|---|---:|---:|
+| recent (last 3) | 1.68 | 1.79 |
+| middle | **0.72** | 0.26 |
+| early (first 3) | **0.14** | 0.03 |
+
+Recent-iter coverage is essentially unchanged, but middle iters receive ~2.8×
+more reads per slot under bandit, and early iters ~5× more. The bandit's
+`best_iterations` list pulls the proposer back to older iterations that the
+recency prior would otherwise skip.
+
+### Takeaways
+
+- The adaptive policies' main effect on read behavior is *redistribution*, not
+  reduction: total Read calls per iteration are similar to `default+direction`
+  (~21–23 reads/iter) but the targets shift.
+- The `best_iterations` slot is the primary lever; bandit-marked best dirs
+  receive ~10–15× more reads per slot than unmarked refs.
+- The `worst_iteration` slot has near-zero observable effect on the proposer's
+  read distribution; if a future revision keeps it, the worst summary should be
+  surfaced more directly in the prompt rather than only as a referenced dir.
+- Without bandit hints, the proposer defaults to strong recency bias and
+  almost never re-reads early iterations; this is the failure mode that the
+  best-iter pointer corrects.
