@@ -1,61 +1,28 @@
-Automated harness optimization improves an agent harness---the code that
-determines what to store, retrieve, and present to a model---through an
-iterative propose--evaluate loop. Recent systems such as Meta-Harness replace
-compressed textual feedback with a coding agent that can inspect the full
-filesystem history of prior candidates, allowing the proposer to diagnose
-failures from raw code, traces, and diffs. However, full access is not the same
-as useful access: as the optimization horizon grows, the expanding history can
-dilute the proposer's attention, forcing it to repeatedly rediscover which past
-runs and files are relevant to the next edit.We formulate this bottleneck as an \emph{online context curation} problem. At each iteration, before observing the next candidate's reward, the optimizer must choose an evidence bundle for the proposer under a limited attention budget: which prior iterations to expose, how much trace detail to include, and which
-workspace files to emphasize. We introduce \name, a framework that treats this
-choice as a first-class control variable in automated harness optimization.
-\name curates proposer context along two complementary axes. Along the
-\emph{iteration axis}, a adaptive policy starts from narrow evidence
-around the best/worst prior pair and escalates to richer history only after
-optimization stalls. Along the \emph{file axis}, a bandit policy assigns delayed
-credit to files read by the proposer and concentrates future attention on files
-whose inspection has historically led to productive edits.Across three benchmarks spanning agentic software engineering and long-horizon
-memory, \name improves over the uncurated full-context baseline in most
-(benchmark, proposer) settings, with the largest gain raising SWE-bench
-Verified passrate by up to 20 points over the source harness. Trajectory-level
-analysis shows that most training-time improvements arise from low- or
-medium-budget iterations rather than full-context ones, demonstrating that
-proposer context is not merely an implementation detail or a static prompt
-artifact, but an online optimization variable that determines how effectively
-the harness search progresses.
-
-
-
-% Recent work has shown that coding agents can optimize LLM agent harness
-% through a propose-evaluate loop, but leaves the proposer's attention
-% unmanaged: every iteration sees the full file tree and complete execution
-% history with no explicit optimization direction. We present Optimization
-% Harness, a modular framework that curates the proposer's context and
-% guides which mechanism axes it explores. The framework provides Docker
-% file-scope sandboxing, mechanism-level optimization-focus prompts, and
-% labeled best/worst reference iterations, enabling two adaptive
-% context-selection policies. The progressive policy runs a budget state
-% machine (\texttt{low}$\,\to\,$\texttt{medium}$\,\to\,$\texttt{high})
-% that escalates only after a Pareto-frontier stall and resets on every
-% improvement. The bandit policy is a more aggressive recommendation-driven
-% variant that scores every readable file with a per-file UCB scorer,
-% rolling $z$-score reward, and Beta-smoothed prior, concentrating
-% high-utility files in a hot workspace each iteration. Across three
-% benchmarks (LoCoMo, LongMemEval, SWE-bench Verified) and two proposer
-% families (Claude Code calling Kimi K2.6, and Codex GPT-5.4), our
-% progressive policy beats the fixed-high default in five of six
-% (benchmark, proposer) cells, with LongMemEval on Codex GPT-5.4 the only
-% cell where default is not surpassed. The strongest result comes from the
-% bandit's optimized harness on SWE-bench Verified, which lifts the full
-% 500-task split from 0.44 to 0.64 (+20\,pp). The bandit reaches the
-% cell-best passrate in 2 of the 6 cells (also LoCoMo with Codex GPT-5.4
-% at 0.39) and ties progressive in a third (SWE-bench mini train30), but
-% regresses against default on both LongMemEval cells, exposing a failure
-% mode for direct file-utility recommendation on long-memory retrieval
-% tasks. Across the
-% ten adaptive runs, 35 of 48 training-time score-improvement events
-% occur at \texttt{low} or \texttt{medium} budget, and after warm-up the
-% per-opportunity breakthrough rate at \texttt{high} (9\%) does not
-% exceed that of \texttt{low} (11\%) or \texttt{medium} (11\%),
-% supporting our central claim that curating what an optimizer attends to
-% beats giving it more context.
+Automated harness optimization improves the code that wraps a language model
+into an agent through an iterative propose--evaluate loop. Recent systems such
+as Meta-Harness replace compressed textual feedback with a coding agent that
+can inspect the full filesystem history of prior candidates. This gives the
+proposer access to raw code, traces, and diffs, but full access is not
+necessarily useful access. As the optimization horizon grows, the expanding
+history can dilute the proposer's attention and force it to rediscover which
+past runs and files matter for the next edit. We formulate this bottleneck as
+an \emph{online context curation} problem: before each proposal, the optimizer
+must choose which prior iterations, trace detail, and workspace files should be
+made salient under a limited inspection budget. We introduce \name, a framework
+that treats this choice as a control variable in automated harness
+optimization. \name combines two composable curation strategies. The
+iteration-level strategy bounds and labels historical evidence, beginning with
+narrow best/worst references and expanding when optimization stalls. This
+strategy alone improves held-out performance in the main comparisons. The
+file-level strategy can be added to assign delayed credit to files read by the
+proposer and to prioritize files whose inspection has correlated with
+productive edits. The two strategies are not independent additive components:
+both route the same bounded proposer attention, but at different granularities.
+Across three benchmarks spanning software engineering and long-horizon memory,
+\name improves over the uncurated full-context baseline in most (benchmark,
+proposer) settings and introduces lower-cost operating points on the
+cost--quality frontier. On SWE-bench Verified, the strongest curated harness
+raises full-set passrate from 0.440 to 0.640 over the source harness. These
+results suggest that proposer context, usually treated as a static prompt
+artifact, is itself an online optimization variable that shapes harness
+search efficiency.

@@ -106,6 +106,21 @@ overall system-level redesign:
             f"- Bandit reference roles: best iteration(s): `{best_label}`; "
             f"worst iteration: `{worst_label}`.\n"
         )
+    elif selection_policy == "random":
+        reference_role_note = (
+            "- Baseline reference policy: random sample of up to 3 previous "
+            "raw iterations; no metric ranking is implied by the selection.\n"
+        )
+    elif selection_policy == "recent":
+        reference_role_note = (
+            "- Baseline reference policy: most recent up to 3 previous raw "
+            "iterations; no metric ranking is implied by the selection.\n"
+        )
+    elif selection_policy == "best":
+        reference_role_note = (
+            "- Baseline reference policy: top-3 previous raw iterations by "
+            "train passrate; no worst iteration is exposed.\n"
+        )
     else:
         reference_role_note = ""
     bandit_section = ""

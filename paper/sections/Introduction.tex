@@ -1,104 +1,73 @@
 \section{Introduction}
 \label{sec:intro}
 
+Agent \emph{harnesses}---the code that wraps a large language model
+(LLM) into a working agent---are a major determinant of agent
+performance. Two agents built on the same LLM but with different
+harnesses can differ by as much as $6\times$ on the same
+benchmark~\cite{tian2026swe}. This gap has motivated
+\emph{automated harness optimization}: an outer loop in which an
+LLM-driven proposer iteratively proposes candidate agents, prompts, or
+memory components, and an evaluator scores each candidate to guide the
+next proposal~\cite{romeraparedes2024funsearch,novikov2025alphaevolve,sharma2025openevolve,agrawal2025gepa,lee2026metaharness}.
 
-Agent \emph{harness}—the code that wraps an LLM into a working agent—has become a critical factor in agent performance: two agents built on the same LLM but with different harnesses can differ by as much as 6 $\times$ on the same benchmark~\cite{tian2026swe}. This gap has motivated \emph{automated harness optimization}: the outer-loop systems  where an LLM-driven \emph{proposer} iteratively proposes candidate agents, prompts, or memory components, and an \emph{evaluator} evaluates them on a benchmark, and uses the results to guide the next proposal~\cite{romeraparedes2024funsearch,novikov2025alphaevolve,sharma2025openevolve,agrawal2025gepa,lee2026metaharness}. 
+Most prior approaches inherit the information bottleneck of text
+optimization~\cite{hu2024adas,sharma2025openevolve,zhang2025ace}.
+Feedback from previous runs is compressed into scalar scores, short
+summaries, or the most recent candidate~\cite{novikov2025alphaevolve,agrawal2025gepa,lee2025feedback,madaan2023self,yang2023large}.
+This compression removes details needed to trace downstream failures to
+earlier harness decisions~\cite{lee2026metaharness}. Meta-Harness
+addresses this limitation by replacing the proposer with a coding agent
+equipped with developer tools and by exposing the full revision history
+as a navigable filesystem~\cite{lee2026metaharness}. The meta-agent can
+inspect raw code, execution traces, and diffs before proposing the next
+edit.
 
+Full access, however, is not equivalent to effective access. As the
+optimization horizon grows, the filesystem contains an expanding set of
+prior candidates, failed edits, traces, and summaries. The proposer must
+then repeatedly determine which subset of this history is relevant to
+the current failure. We therefore reframe automated harness
+optimization as an \emph{online context curation} problem: before each
+proposal, the optimizer must decide which prior iterations, trace
+details, and workspace files should be made salient under the
+proposer's limited inspection budget.
 
-Most prior approaches to automated harness optimization adapt techniques from \emph{text optimization}~\cite{hu2024adas,sharma2025openevolve,zhang2025ace}, in which the proposer iteratively refines a text or code artifact using feedback from prior runs. However, the context limits force this feedback to be heavily compressed into scalar scores~\cite{novikov2025alphaevolve,agrawal2025gepa}, short summaries~\cite{lee2025feedback}, or only the most recent candidate~\cite{madaan2023self,yang2023large}, which inevitably remove information needed to trace downstream failure to earlier harness decision~\cite{lee2026metaharness}.  To address this limitation, Meta-Harness~\cite{lee2026metaharness} replaces the proposer with a coding agent — an LLM equipped with developer tools — and exposes the full revision history of prior candidates as a navigable filesystem. The coding agent, named meta-agent, reads raw code and execution traces directly, via standard operations such as \textit{grep} and \textit{cat}, and decides for itself which prior attempts to inspect before proposing the next edit. This shift from compressed feedback to argentic, on-demand inspection has produced clear gains over various baselines~\cite{lee2026metaharness}.
+We introduce \textbf{\name}, a framework that treats this context
+choice as a control variable in automated harness optimization. \name
+sits between the optimization loop and the meta-agent, deciding which
+historical evidence and file-level evidence should guide each proposal.
+The framework supports two composable curation strategies. The
+iteration-level strategy defines
+the historical scope: it starts from a small labelled set of high- and
+low-performing prior attempts and expands exposure when optimization
+stalls. This strategy is sufficient to improve held-out performance in
+our main comparisons. The file-level strategy can then be added to
+reallocate the proposer's fixed read budget within the exposed
+workspace, using delayed reward to prioritize files whose inspection has
+correlated with productive edits.
 
-Yet full access to the revision history is not the same as effective use of it. A natural question is whether the meta-agent can reliably locate what matters for the next edit: as the optimization horizon grows, the volume of available context may dilutes the meta-agent's attention rather than informing it. The agent must repeatedly re-discover, within an ever-expanding pool of prior code and execution traces, which subset is actually relevant to the current failure. The question is therefore not "what should the meta-agent be \emph{allowed to see}?" but "what should the meta-agent \emph{attend to}?" In this paper, we reframe automated harness optimization as a \emph{context curation} problem and ask: 
-\begin{quote}
-What is the optimal context to expose to the meta-agent at each round?
-\end{quote}
+This design does not require both strategies to be active. Rather, both
+address the same inspection bottleneck at different granularities.
+Iteration-level curation changes which parts of the search history are
+available and labelled. File-level curation changes where the proposer
+spends its bounded inspection effort inside the exposed workspace. Thus,
+the two axes need not produce independent, monotonic, or uniformly
+positive effects. They provide alternative and composable ways to move
+the optimization loop along a cost--quality frontier.
 
-To answer this question, we introduce \textbf{\name}, a framework that treats context curation as the central optimization variable in automated harness optimization. \name sits between the optimization loop and the meta-agent, deciding at each round which past iterations and which files the meta-agent should attend to. Within this framework, we develop two complementary curation strategies that target the iteration axis and the file axis.
-
-\textbf{Iteration-level: an adaptive budget.} We define three budget levels. The \emph{low} budget exposes only the best harness seen so far; the \emph{medium} budget adds the worst, providing a contrast that highlights which design choices matter; the \emph{high} budget exposes the full history and lets the meta-agent identify useful files itself. We start every iteration at the low budget and escalate to medium and then high only if the meta-agent fails to produce an improving edit, returning to the low budget once it succeeds. This yields cheap context on average and rich context exactly when the agent needs it.
-
-\textbf{File-level: a bandit over files.} We treat each file in the harness as an arm of a multi-armed bandit; at every round, the bandit selects a subset of files to expose, with reward drawn from the validation improvement observed when those files were included. Over rounds, the bandit concentrates the meta-agent's attention on files that historically drive productive edits and phases out files that consistently do not. Unlike a fixed top-$k$ retriever, the bandit adapts as the harness evolves and as the locus of failure shifts across files
-
-We evaluate \name on three benchmarks spanning agentic software engineering and long-horizon memory: SWE-bench~\cite{jimenez2024swebench}, LongMemEval~\cite{wu2024longmemeval}, and LoCoMo~\cite{maharana2024locomo}. Across all three, \name improves over the uncurated Meta-Harness baseline by [XX]\% relative on average while reducing meta-agent input length by [YY]\% (Section~\ref{...}). The two curation axes are complementary rather than redundant: iteration-only curation yields [+a]\%, file-only curation yields [+b]\%, and combining them adds a further [+c]\% (Section~\ref{...}).
-
-
-% LLM-based agents are now being applied to a widening set of tasks including software engineering~\cite{jimenez2024swebench,yang2024sweagent}, memory-augmented assistants~\cite{wu2024longmemeval}, completing operating-system task~\cite{} and so on.
-% Behind each of these systems is a \emph{harness}: the prompts, tool definitions, retrieval rules, and control flow that turn a base LLM into a goal-directed agent~\cite{lee2026metaharness}. Recently, hand-engineering this harness has emerged as a primary bottleneck in agent development, motivating a recent wave of work on \textbf{automated harness optimization}, in which a \emph{meta-agent} iteratively edits the harness over many rounds, guided by validation-set feedback and a record of prior attempts~\cite{hu2024adas,sharma2025openevolve,zhang2025ace,lee2026metaharness}
-
-% This optimization loop is, however, more fragile than its mechanics suggest. By round $N$, the optimization record consists of every prior harness, the diffs between them, validation traces from each round, and the agent's full  source tree-often often exceeding context window of a LLM. To alleviate the issue, existing methods compress iteration history into summaries~\cite{sharma2025openevolve} or curated playbooks~\cite{zhang2025ace}, feeding the meta-agent a lossy but compact view. 
-
-
-% In modern pipelines this record is rarely 
-% flattened into a single prompt; the meta-agent is itself an agent—often realized with Claude Code or a similar CLI-equipped backbone~\citep{...}—that decides for itself which files and which past iterations to read. The choice of what to read is therefore made by the meta-agent every round, but it is made \emph{unsupervised}: existing automated harness optimization pipelines neither curate this input nor train the meta-agent to curate it well. What the meta-agent ends up attending to is left to chance, and is rarely studied as a design variable in its own right. Meta-Harness~\cite{lee2026metaharness} takes the opposite stance,
-% deploying a coding agent with full file system access to all prior candidates, scores, and traces, on the premise that a capable agent's native browsing and reasoning already constitute an effective search gradient. 
-
-
-
-
-% Large language model (LLM) agents are increasingly deployed as autonomous
-% software engineers~\cite{jimenez2024swebench,yang2024sweagent}, long-context
-% assistants~\cite{wu2024longmemeval}, and conversational
-% companions~\cite{maharana2024locomo}. Their effectiveness is largely
-% determined by \emph{harness engineering}: the design of the surrounding
-% code that orchestrates memory, retrieval, prompt routing, and tool
-% use~\cite{lee2026metaharness}. Automating this design through
-% propose--evaluate loops, where a second LLM (the \emph{proposer})
-% iteratively improves the harness, has emerged as a promising
-% paradigm~\cite{hu2024adas,khattab2023dspy}.
-
-% Existing approaches span a spectrum of information exposure.
-% ACE~\cite{zhang2025ace} and OpenEvolve~\cite{sharma2025openevolve}
-% compress iteration history into summaries or curated playbooks, feeding
-% the proposer a lossy but compact view.
-% Meta-Harness~\cite{lee2026metaharness} takes the opposite stance,
-% deploying a coding agent with full filesystem access to all prior
-% candidates, scores, and traces, on the premise that a capable agent's
-% native browsing and reasoning already constitute an effective search
-% gradient. This intuition is sound: a coding agent's chain-of-thought
-% \emph{is} the optimization gradient, and its ability to autonomously
-% navigate large workspaces makes it a natural proposer. Yet even powerful
-% proposers benefit from active management of which files they attend to.
-% As harnesses grow in complexity, unrestricted file access can dilute the
-% proposer's \textbf{attention} and diffuse its \textbf{optimization
-% direction}, analogous to how CODEFILTER~\cite{li2025codefilter} shows
-% that filtering retrieved context to only positive-impact chunks improves
-% code completion over providing all retrieved files. Explicit
-% mechanism-level guidance further enables \textbf{directed exploration},
-% steering the proposer toward structurally distinct alternatives rather
-% than repeatedly revisiting familiar axes such as prompt wording.
-
-% This paper introduces \textbf{Optimization Harness}, a modular framework
-% that wraps any propose--evaluate loop with three capabilities:
-% (i)~Docker file-scope sandboxing that restricts the proposer to a
-% curated workspace, (ii)~mechanism-level optimization-focus prompts that
-% steer exploration along named axes, and (iii)~labeled best/worst
-% reference iterations that provide imitation targets and anti-patterns.
-% Two adaptive context-selection policies build on this framework: a
-% \emph{progressive} policy that escalates a budget state machine
-% (\texttt{low}$\,\to\,$\texttt{medium}$\,\to\,$\texttt{high}) only after
-% a Pareto-frontier stall, and a \emph{bandit} policy that scores each
-% workspace file with a per-file UCB scorer and concentrates high-utility
-% files in a curated ``hot workspace'' each iteration.
-
-% Across three benchmarks (LoCoMo, LongMemEval, SWE-bench Verified) and
-% two proposer families (Claude Code with Kimi K2.6, and Codex GPT-5.4),
-% the progressive policy outperforms the fixed-high default in five of six
-% cells. The bandit policy achieves the single strongest result, lifting
-% SWE-bench Verified from 0.44 to 0.64 (+20\,pp) on the full 500-task
-% split. Across ten adaptive runs, 35 of 48 score-improvement events occur
-% at \texttt{low} or \texttt{medium} budget, confirming that
-% \emph{managing what the optimizer sees} is a complementary and effective
-% lever to improving the optimizer itself. Our contributions are:
-% \begin{enumerate}
-%     \item We formalize \emph{proposer context management} in harness
-%     optimization and show that curating file access improves attention
-%     focus, optimization direction, and exploration diversity.
-%     \item We introduce Optimization Harness, a modular framework with
-%     Docker sandboxing, mechanism-focus prompts, and reference labeling
-%     that enables pluggable context-selection policies.
-%     \item We propose two adaptive policies (progressive and bandit) and
-%     evaluate them on three benchmarks with two proposer families,
-%     demonstrating consistent improvements over the fixed-high baseline.
-%     \item We provide an empirical analysis of where breakthroughs occur
-%     across budget tiers, showing that curating attention is more
-%     efficient per opportunity than maximizing context.
-% \end{enumerate}
+We evaluate \name on three benchmarks spanning agentic software
+engineering and long-horizon memory: SWE-bench~\cite{jimenez2024swebench},
+LongMemEval~\cite{wu2024longmemeval}, and LoCoMo~\cite{maharana2024locomo}.
+Across these benchmarks, adaptive context curation improves held-out
+performance in most settings and introduces lower-cost operating points
+on the cost--quality frontier. On SWE-bench Verified, the strongest
+curated harness reaches 0.640 passrate on the full verified set,
+compared with 0.440 for the source harness and 0.458 for the
+full-context optimized baseline. Mechanistic analyses show that the
+proposer reads roughly the same number of files per iteration; what
+changes is the target. \name redirects this fixed inspection budget
+from recency-biased browsing toward policy-labelled iterations and
+utility-weighted files. These results suggest that managing what the
+proposer attends to is a first-class design variable in automated
+harness optimization.

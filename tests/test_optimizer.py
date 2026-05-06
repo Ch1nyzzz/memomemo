@@ -198,7 +198,10 @@ def test_optimizer_can_disable_default_docker_sandbox(tmp_path):
     assert optimizer._proposer_sandbox_config() is None
 
 
-@pytest.mark.parametrize("selection_policy", ["progressive", "bandit"])
+@pytest.mark.parametrize(
+    "selection_policy",
+    ["progressive", "bandit", "random", "recent", "best"],
+)
 def test_adaptive_selection_policies_require_docker_sandbox(tmp_path, selection_policy):
     with pytest.raises(ValueError, match="requires --proposer-sandbox docker"):
         LocomoOptimizer(
@@ -1054,6 +1057,91 @@ def test_progressive_reference_selection_uses_best_and_worst_iterations(tmp_path
     ) == (1, 2, 3, 4)
 
 
+def test_random_and_recent_reference_selection_use_three_raw_iterations(tmp_path):
+    candidates = [
+        _scored_candidate("iter001_a_top8", passrate=0.1),
+        _scored_candidate("iter002_b_top8", passrate=0.2),
+        _scored_candidate("iter003_c_top8", passrate=0.3),
+        _scored_candidate("iter004_d_top8", passrate=0.4),
+        _scored_candidate("iter005_e_top8", passrate=0.5),
+    ]
+    for iteration in (1, 2, 3, 4, 5):
+        call_dir = tmp_path / "proposer_calls" / f"iter_{iteration:03d}"
+        (call_dir / "eval").mkdir(parents=True)
+        (call_dir / "eval" / "candidate_result.compact.json").write_text(
+            "{}",
+            encoding="utf-8",
+        )
+
+    recent = LocomoOptimizer(
+        LocomoOptimizerConfig(
+            run_id="r",
+            out_dir=tmp_path,
+            selection_policy="recent",
+            proposer_docker_image="memo-proposer:test",
+        )
+    )
+    assert recent._reference_iterations_for_budget(
+        "medium",
+        iteration=6,
+        candidates=candidates,
+    ) == (3, 4, 5)
+
+    random_policy = LocomoOptimizer(
+        LocomoOptimizerConfig(
+            run_id="r",
+            out_dir=tmp_path,
+            selection_policy="random",
+            proposer_docker_image="memo-proposer:test",
+        )
+    )
+    refs = random_policy._reference_iterations_for_budget(
+        "medium",
+        iteration=6,
+        candidates=candidates,
+    )
+    assert len(refs) == 3
+    assert refs == random_policy._reference_iterations_for_budget(
+        "medium",
+        iteration=6,
+        candidates=candidates,
+    )
+    assert set(refs).issubset({1, 2, 3, 4, 5})
+
+
+def test_best_reference_selection_picks_top_three_by_passrate(tmp_path):
+    candidates = [
+        _scored_candidate("iter001_a_top8", passrate=0.10),
+        _scored_candidate("iter002_b_top8", passrate=0.55),
+        _scored_candidate("iter003_c_top8", passrate=0.20),
+        _scored_candidate("iter004_d_top8", passrate=0.45),
+        _scored_candidate("iter005_e_top8", passrate=0.30),
+    ]
+    for iteration in (1, 2, 3, 4, 5):
+        call_dir = tmp_path / "proposer_calls" / f"iter_{iteration:03d}"
+        (call_dir / "eval").mkdir(parents=True)
+        (call_dir / "eval" / "candidate_result.compact.json").write_text(
+            "{}",
+            encoding="utf-8",
+        )
+
+    optimizer = LocomoOptimizer(
+        LocomoOptimizerConfig(
+            run_id="r",
+            out_dir=tmp_path,
+            selection_policy="best",
+            proposer_docker_image="memo-proposer:test",
+        )
+    )
+    refs = optimizer._reference_iterations_for_budget(
+        "medium",
+        iteration=6,
+        candidates=candidates,
+    )
+    # top-3 passrates are iter002 (0.55), iter004 (0.45), iter005 (0.30); sorted ascending
+    assert refs == (2, 4, 5)
+
+
 def test_best_candidates_uses_passrate_average_score_pareto_frontier(tmp_path):
     optimizer = LocomoOptimizer(LocomoOptimizerConfig(run_id="r", out_dir=tmp_path))
     candidates = [
@@ -1302,6 +1390,46 @@ def test_default_high_budget_workspace_copies_all_reference_iterations(tmp_path)
             / "eval"
             / "candidate_result.compact.json"
         ).exists()
+
+
+def test_recent_workspace_copies_only_three_selected_reference_iterations(tmp_path):
+    optimizer = LocomoOptimizer(
+        LocomoOptimizerConfig(
+            run_id="r",
+            out_dir=tmp_path,
+            selection_policy="recent",
+            proposer_docker_image="memo-proposer:test",
+        )
+    )
+    for iteration in (1, 2, 3, 4):
+        call_dir = tmp_path / "proposer_calls" / f"iter_{iteration:03d}"
+        (call_dir / "eval").mkdir(parents=True)
+        (call_dir / "eval" / "candidate_result.compact.json").write_text(
+            json.dumps({"candidate_id": f"iter{iteration:03d}_candidate_top8"}),
+            encoding="utf-8",
+        )
+    candidates = [
+        _scored_candidate("iter001_first_top8", passrate=0.4),
+        _scored_candidate("iter002_second_top8", passrate=0.3),
+        _scored_candidate("iter003_third_top8", passrate=0.2),
+        _scored_candidate("iter004_fourth_top8", passrate=0.1),
+    ]
+
+    workspace, refs = optimizer._build_progressive_workspace(
+        iteration=5,
+        budget="medium",
+        existing_candidates=candidates,
+        call_dir=tmp_path / "proposer_calls" / "iter_005",
+    )
+
+    assert refs == (2, 3, 4)
+    ref_dir = workspace / "reference_iterations"
+    assert sorted(path.name for path in ref_dir.iterdir()) == [
+        "iter_002",
+        "iter_003",
+        "iter_004",
+    ]
+    assert not (ref_dir / "iter_001").exists()
 
 
 def test_bandit_first_iteration_bootstraps_workspace_and_access_advisory(tmp_path):
