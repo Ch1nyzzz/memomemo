@@ -97,7 +97,7 @@ def fig_optimization_effect():
     col_prog     = "#EE8866"   # warm coral
     col_cura     = "#4477AA"   # muted steel blue
 
-    fig, ax = plt.subplots(figsize=(6.4, 3.8))
+    fig, ax = plt.subplots(figsize=(7.6, 4.6))
     ax2 = ax.twinx()
 
     # Upper half: mean test passrate
@@ -125,9 +125,13 @@ def fig_optimization_effect():
 
     ax.axhline(0, color="black", lw=0.8)
     ax.set_xticks(xs)
-    ax.set_xticklabels(cells)
-    ax.set_ylabel("Mean test passrate                                   ")
-    ax2.set_ylabel("                                   Token consumption (M / propose)")
+    ax.set_xticklabels(cells, fontsize=10)
+    ax.set_ylabel("Mean test passrate                                   ",
+                  fontsize=11)
+    ax2.set_ylabel("                                   Token consumption (M / propose)",
+                   fontsize=11)
+    ax.tick_params(axis="y", labelsize=9.5)
+    ax2.tick_params(axis="y", labelsize=9.5)
     ax.grid(True, axis="y", ls=":", lw=0.4, color="grey", alpha=0.45)
     ax.set_axisbelow(True)
 
@@ -142,20 +146,20 @@ def fig_optimization_effect():
     for offset, vals in zip(offsets, (baseline_test, progressive_test, cura_test)):
         for x, v in zip(xs + offset, vals):
             ax.text(x, v + 0.012, f"{v:.2f}",
-                    ha="center", va="bottom", fontsize=6.4)
+                    ha="center", va="bottom", fontsize=8.2)
     for offset, vals in zip(offsets, (baseline_tok, progressive_tok, cura_tok)):
         for x, v in zip(xs + offset, vals):
             ax2.text(x, -v - 0.08, f"{v:.2f}",
-                     ha="center", va="top", fontsize=6.4)
+                     ha="center", va="top", fontsize=8.2)
 
     # Section labels on the y-axis
     ax.text(-0.55, 0.40, "quality ↑", rotation=90, va="center", ha="center",
-            fontsize=7.5, color="#444444", style="italic")
+            fontsize=9.5, color="#444444", style="italic")
     ax.text(-0.55, -0.40, "cost ↓ (better)", rotation=90, va="center",
-            ha="center", fontsize=7.5, color="#444444", style="italic")
+            ha="center", fontsize=9.5, color="#444444", style="italic")
 
     ax.legend(handles=[bars_b, bars_p, bars_c],
-              loc="upper right", ncol=3, fontsize=7.5)
+              loc="upper right", ncol=3, fontsize=9.5)
 
     fig.tight_layout()
     fig.savefig("optimization_effect.pdf", bbox_inches="tight")
