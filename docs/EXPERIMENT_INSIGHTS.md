@@ -342,6 +342,120 @@ options, removing roughly another ~400k cache_read. Net: +42k - 336k - 400k
 ~ -694k, about -21% of the 3.25M default cache_read. This is in line with
 the measured -25% cache_read drop and the headline -23% total drop.
 
+### SWE-bench exception: longer tool trajectories reverse the cost pattern
+
+The memory-cell explanation above does not automatically transfer to
+SWE-bench mini. For SWE-bench, the relevant claim is narrower: the proposer
+has longer interactive debugging trajectories, so the repeated cache-read of
+Read observations is amplified. "Longer" here means more tool/read turns and
+larger proposer transcripts, not more wall-clock time or substantially more
+source lines read.
+
+Raw claudekimi proposer artifacts re-aggregated from the retained local runs
+and the `/helios-storage/...` run directories show the domain shift:
+
+| domain slice | runs | total/iter | cache/iter | tools/iter | Read calls/iter | read lines/iter | stream MB/iter | prompt KB |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| LoCoMo | 4 | 3.53M | 3.35M | 47.8 | 27.8 | 4,096 | 1.00 | 8.0 |
+| LongMemEval | 3 | 3.18M | 2.97M | 45.5 | 26.8 | 3,854 | 1.01 | 8.4 |
+| SWE-bench mini | 4 | 3.56M | 3.39M | 59.7 | 34.9 | 3,981 | 1.17 | 9.1 |
+
+SWE-bench mini has about 25% more tool turns than LoCoMo (59.7 vs 47.8)
+and 31% more than LongMemEval (59.7 vs 45.5). Read calls rise by a similar
+amount, while proposer stream files are 15-17% larger. The average number
+of read lines is not materially larger than the memory cells, so the cost
+increase is not because SWE simply dumps more source text in one shot. The
+cost comes from more rounds of source inspection, trace inspection, and
+candidate implementation comparison; those observations then remain in the
+conversation prefix and are repeatedly cache-read on later turns.
+
+The same pattern appears inside SWE-bench when comparing policies against
+full context:
+
+| SWE policy | total/iter | cache/iter | tools/iter | Read calls/iter | read lines/iter | stream MB/iter | prompt KB |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| full context default | 3.22M | 3.06M | 56.0 | 31.1 | 3,701 | 1.18 | 6.5 |
+| progressive | 3.78M | 3.61M | 61.0 | 33.4 | 4,198 | 1.24 | 6.8 |
+| bandit fixed-source | 3.51M | 3.35M | 56.6 | 35.1 | 3,831 | 1.05 | 11.4 |
+| bandit v4 | 3.73M | 3.56M | 65.1 | 40.1 | 4,195 | 1.19 | 11.6 |
+
+Unlike the memory cells, adaptive policies do not shorten SWE trajectories.
+Progressive adds 5.0 tool turns over full context; bandit v4 adds 9.1 tool
+turns and 9.0 Read calls. This is enough to offset the intended savings from
+curated context, because each additional turn re-reads the accumulated
+debugging transcript.
+
+Read-line buckets explain what the extra turns are doing. Full context reads
+38.2% of its lines from current Mini-SWE-agent source and 5.4% from reference
+Mini-SWE source. Progressive shifts to 36.3% current source and 11.9%
+reference source. Fixed-source bandit shifts further to 51.8% current source
+and 15.7% reference source, while bandit v4 spends 58.3% on current source.
+Thus the extra cache is not generic summary reading; it is concentrated in
+the Mini-SWE control loop and prior candidate implementations.
+
+Representative proposer outputs connect those reads to behavior. Full-context
+iter002 reads summaries, the iter001 trace, `swebench.py`, `DefaultAgent`,
+and `swebench.yaml`, then proposes `stack_trace_context`: parse file paths
+and line numbers from the issue and inject those snippets. Full-context
+iter010 reads iter009 diagnostics, retrieval outputs, `swebench.py`,
+`DefaultAgent`, and the benchmark runner, then proposes `test_oracle_context`:
+find tests, run `pytest`, and inject traceback/source snippets. Progressive
+iter016 reads the candidate table, prior diagnostics, candidate source, trace
+slices, and `DefaultAgent`, then proposes
+`final_fallback_traceback_retrieval_v1`, explicitly combining the earlier
+traceback-aware retrieval direction with final-fallback canonicalization.
+Bandit iter005 and iter013 read hot summaries, current source, previous
+candidate source, evaluation summaries, trace slices, `DefaultAgent`,
+`InteractiveAgent`, and `swebench.yaml`, then propose feedback/recovery and
+impact-aware agent changes.
+
+The resulting interpretation is different from the memory domains. On memory
+tasks, curation mostly substitutes for exploratory turns. On SWE-bench mini,
+curation gives the proposer actionable debugging targets inside a multi-file
+agent control loop, and the proposer responds by doing more mechanism
+diagnosis. That is why default can read fewer tokens on SWE while bandit v4
+and progressive read more: their additional context increases the amount of
+specific source/trace comparison work rather than eliminating the local scan.
+
+### Per-turn cost decomposition: where the SWE inversion lives
+
+The mem vs SWE divergence becomes precise when total cache is factored as
+`tools_per_iter × cache_per_turn` and the bandit / default+direction cells
+are compared inside each domain (claudekimi, run-mean of per-iter means
+across the runs cited in `docs/experiment_detail.md`):
+
+| cell | tools/iter Δ | cache/turn Δ | read_lines/turn Δ | total cache Δ |
+|---|---:|---:|---:|---:|
+| LongMemEval (mem) | 50.2 → 38.6 (**−23%**) | 72.4k → 52.0k (**−28%**) | flat | (1−0.23)×(1−0.28) = 0.55, so **−45%** |
+| SWE-bench mini | 63.5 → 73.3 (**+16%**) | 73.0k → 66.5k (−9%) | 52.2 → 65.6 (**+26%**) | (1+0.16)×(1−0.09) = 1.06, so **+6%** |
+
+`cache/turn` is `cache_read_input_tokens / tools_count`, i.e. the average
+cache consumed per LLM call inside a propose. `total cache` per iter
+satisfies `total ≈ tools × cache_per_turn`, so the relative change in the
+total decomposes multiplicatively into the two factors above. The
+"complete" change is just the product of the two; we report it that way
+to make explicit which factor each domain rides on.
+
+Both domains see a small per-turn cache reduction from the longer bandit
+prompt — the pointer replaces some of the proposer's own option
+enumeration, so its intermediate output per turn shortens (cache/turn −28%
+on LME, −9% on SWE). What flips the sign is the tool-turn factor: turns
+*drop* 23% on LME (pointer collapses exploration into prescription on a
+~10-file scaffold) but *rise* 16% on SWE, and each Read pulls back 26%
+more lines (longer debugging-target inspections like `DefaultAgent`,
+`swebench.py`, `trace_slices/`). The pointer mechanism is the same; the
+trajectory it induces is collapse-style on a small candidate codebase
+(memgpt) and amplification-style on a multi-file agent control loop.
+
+This decomposition is consistent with `Within ref_iter: a policy-agnostic
+attention ceiling` below: the proposer's per-touched-dir depth in
+`reference_iterations/iter_M/` stays at ~1.7–2.6 files in both domains,
+so the cross-domain difference does not come from how deeply ref iters
+are inspected. It comes from how much *current source* and *trace slice*
+each Read pulls back per turn, which on SWE is dominated by a handful of
+large agent-loop files (`DefaultAgent`, `InteractiveAgent`,
+`mini_swe_agent.py`) that simply have more lines than any memgpt file.
+
 ### Progressive vs bandit: state machine fragility on larger codebases
 
 Progressive's mechanism is more aggressive than bandit: bandit surfaces a
@@ -521,19 +635,131 @@ way the prior "Budget-Conditioned Proposer Behavior" section is.
 
 The workspace file count is a proxy for what the agent could reach.
 Escalating from `low` to `high` inflates the pool ~17.7x for bandit and
-~6.9x for progressive. But the agent's `unique_files_read` is essentially
-flat: bandit moves from 15.9 to 19.2 (+21%), progressive moves from 17.5
-to 18.7 (+7%, with a peak at 20.2 in medium). Read lines grow modestly
-(bandit +50%, progressive +13%) and per-iter wall time grows 17% for
-bandit and 15% for progressive. The agent self-throttles to ~18-20
-unique reads per iteration regardless of how many files are physically
-copied into the workspace.
+~6.9x for progressive. The agent's `unique_files_read` does grow, but
+roughly an order of magnitude less: bandit 15.9 → 19.2 (+21%),
+progressive 17.5 → 18.7 (+7%, with a peak at 20.2 in medium). Read
+lines grow modestly (bandit +50%, progressive +13%) and per-iter wall
+time grows 17% for bandit and 15% for progressive.
+
+The deeper structure behind the +21% / +7% net is *substitution within a
+roughly fixed read budget*. Re-bucketing reads by target type across the
+LongMemEval+LoCoMo claudekimi runs cited in `docs/experiment_detail.md`
+(bandit_v3_banditfix r1+r2, bandit_v4 r1, progressive autobudget r1+r2;
+240 propose iters total):
+
+| policy | budget | iters | source unique | summary unique | ref_iter unique | total unique |
+|---|---|---:|---:|---:|---:|---:|
+| bandit | low |  6 | 8.17 | 5.67 | 0.00 | 15.83 |
+| bandit | medium | 82 | 5.71 | 4.97 | 5.53 | 17.85 |
+| bandit | high | 92 | 5.42 | 4.62 | **8.68** | 20.30 |
+| progressive | low | 24 | 7.50 | 4.92 | 4.31 | 19.05 |
+| progressive | high | 58 | 5.86 | 4.82 | 7.74 | 20.34 |
+
+Source-side reads drop ~30% (8.17 → 5.42 for bandit) as ref_iter reads
+climb from 0 to ~8.7, while summary reads stay flat (~4.5–5.7 across all
+cells). The +21–38% net unique growth happens *on top of* a near
+one-for-one substitution: the proposer has a self-imposed ~17–21
+files/iter budget and shifts its share rather than stacking new reads
+onto the source-scanning baseline.
 
 This is the structural confirmation behind the `Reference-Iteration Read
 Distribution` finding below: the agent is not surveying the bigger pool and
 picking more sources; it follows the curated menu the policy surfaces (hot
-paths, best-iter pointers). The pool growth therefore mostly buys I/O cost
-without behavioral change.
+paths, best-iter pointers), and exposes that menu by *redirecting* the
+existing read budget. The pool growth therefore mostly buys I/O cost
+without proportional behavioral change.
+
+### Within ref_iter: a policy-agnostic attention ceiling
+
+The ref_iter unique growth decomposes into "more dirs touched" rather
+than "deeper into the same dir", and the same shape appears under all
+three policies once we pick the axis along which the proposer's
+exposed-dir count grows. For bandit and progressive that axis is
+**budget tier**; for default+direction (which is fixed-high but exposes
+*all prior iter dirs*) it is **iter index**. Bucketing every Read
+landing on `reference_iterations/iter_M/` by M, then aggregating per
+propose iter (claudekimi runs in `docs/experiment_detail.md`):
+
+**Adaptive policies, by budget tier** (bandit_v3_banditfix r1+r2 +
+bandit_v4 r1, progressive autobudget r1+r2):
+
+| benchmark | policy | budget | iters | dirs/iter | files / touched_dir | total ref unique |
+|---|---|---|---:|---:|---:|---:|
+| LongMemEval | bandit | low | 3 | 0.00 | — | 0.00 |
+| LongMemEval | bandit | medium | 50 | 2.30 | 2.54 | 5.12 |
+| LongMemEval | bandit | high | 37 | **4.11** (+79%) | **2.15** (−15%) | 8.43 |
+| LongMemEval | progressive | low | 10 | 1.50 | **3.61** | 5.40 |
+| LongMemEval | progressive | medium | 2 | 1.00 | **4.50** | 4.50 |
+| LongMemEval | progressive | high | 18 | **3.33** | **2.47** (−45% vs medium) | 7.17 |
+| LoCoMo | bandit | low | 3 | 0.00 | — | 0.00 |
+| LoCoMo | bandit | medium | 32 | 3.34 | 2.05 | 6.12 |
+| LoCoMo | bandit | high | 55 | **5.20** (+56%) | **1.84** (−10%) | 9.04 |
+| LoCoMo | progressive | low | 14 | 1.43 | 2.46 | 3.21 |
+| LoCoMo | progressive | medium | 6 | 3.83 | 1.94 | 7.33 |
+| LoCoMo | progressive | high | 40 | **4.45** | **2.02** | 8.15 |
+
+**default+direction, by iter range** (LME 015454+152524, LoCoMo
+015441+154556 — fixed-high schedule but `avail dirs` grows from 2 at
+iter 5 to 27 at iter 30):
+
+| benchmark | iter range | n | avail dirs | dirs touched | files / touched_dir | total ref unique | touch_rate |
+|---|---|---:|---:|---:|---:|---:|---:|
+| LongMemEval | 01-05 | 10 | 2.0 | 0.90 | **5.38** | 4.50 | 45% |
+| LongMemEval | 06-10 | 10 | 7.0 | 2.00 | 3.22 | 5.60 | 29% |
+| LongMemEval | 11-15 | 10 | 12.0 | 2.70 | 2.40 | 6.20 | 23% |
+| LongMemEval | 21-25 | 10 | 22.0 | 3.70 | 2.35 | 7.50 | 17% |
+| LongMemEval | 26-30 | 10 | 27.0 | **3.50** | **2.48** | 7.40 | **13%** |
+| LoCoMo | 01-05 | 10 | 2.0 | 1.70 | **3.04** | 4.50 | 85% |
+| LoCoMo | 06-10 | 10 | 7.0 | 2.20 | 3.16 | 6.10 | 31% |
+| LoCoMo | 11-15 | 10 | 12.0 | 3.80 | 2.38 | 8.50 | 32% |
+| LoCoMo | 21-25 | 10 | 22.0 | 3.70 | 2.25 | 7.70 | 17% |
+| LoCoMo | 26-30 | 10 | 27.0 | **4.70** | **2.26** | 10.50 | **17%** |
+
+Three observations across the two tables:
+
+1. **Every (policy, axis-direction) pair shows dirs↑ / files-per-dir↓
+   when the exposed-dir count grows.** bandit medium→high (LME +79% /
+   −15%, LoCoMo +56% / −10%); progressive medium→high (LME +233% /
+   −45%, LoCoMo +16% / +4%); default+direction iter01-05 → iter26-30
+   (LME +289% / −54%, LoCoMo +176% / −26%). The default magnitude is
+   *larger*, not smaller, than the adaptive policies — it is the
+   strongest evidence the effect is not policy-induced.
+
+2. **Two universal levels emerge: a `dirs touched` ceiling around 3–5
+   per iter, and a `files / touched_dir` floor around ~2.** No cell
+   sustains more than ~5 dirs touched even when 27 dirs are exposed;
+   no high-exposure cell drops below ~2 files per touched dir. The
+   touch_rate column on default+direction makes this explicit:
+   exposed dirs grow 14× from iter 01-05 to 26-30 while touched dirs
+   grow only 4× (LME) / 2.8× (LoCoMo); the proposer self-throttles to
+   the ceiling regardless of the supply.
+
+3. **Below the ceiling the proposer reverts to narrow-deep**:
+   default+direction iter 01-05 has 0.9–1.7 dirs × 3.0–5.4
+   files/touched_dir, mirroring progressive low/medium (1.0–1.5 dirs ×
+   3.6–4.5 files/touched_dir). When the supply of exposed ref dirs is
+   below the ~3-dir ceiling, every available dir tends to get inspected
+   to multi-file depth (typically `diff.patch`, 1–3 files under
+   `source_snapshot/`, occasionally a `trace_slice`). This narrow-deep
+   regime is policy-agnostic: it appears whenever exposed-dir count is
+   small, whether because budget is low (progressive low/medium) or
+   because the run is still in early iters (default+direction iter
+   01-05).
+
+The mechanism-level reading is that the proposer carries a
+**policy-agnostic attention budget for ref iters**: roughly 3–5 dirs at
+~2 files each (≈6–10 ref reads per iter at saturation), which it fills
+narrow-deep when exposed dirs are scarce and broadens-but-thins when
+exposed dirs exceed the ceiling. What policy choice changes is *which*
+dirs enter that pool, not how big the pool is. For bandit, the
+best-tagged dirs concentrate 14–22× more reads/slot than unmarked refs
+(see `Reference-Iteration Read Distribution`). For default+direction,
+the same pool is filled from a recency prior (recent-3 = 2.24
+reads/slot vs early = 0.04). For progressive, the pool is anchored on
+the state-machine-prescribed best/worst pair, which forces narrow-deep
+behavior at low/medium budget and a broader fill at high. The
+attention ceiling and depth floor are properties of the proposer; the
+policy only routes attention into them.
 
 ### Quality vs budget: Pareto trade-off, not a free lunch
 
