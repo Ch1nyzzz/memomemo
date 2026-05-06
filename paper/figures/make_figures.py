@@ -58,7 +58,12 @@ C_PAREGION    = "#e8f4ea"     # very pale green wash for Pareto-favorable region
 # Figure 0: Optimization effect, grouped bars
 # ============================================================================
 def fig_optimization_effect():
-    """Grouped bar chart of held-out passrate gain over full-context."""
+    """Grouped bars: Δmean test pp (left axis) + token savings % (right axis).
+
+    Both axes are oriented so that higher = better, so a cell where a
+    policy beats default on both quality and cost shows two markers above
+    zero on the same vertical strip.
+    """
     cells = [
         "LoCoMo\n/kimi",
         "LoCoMo\n/codex",
@@ -66,16 +71,23 @@ def fig_optimization_effect():
         "LongMem\n/codex",
         "SWE\n/kimi",
     ]
-    progressive = np.array([+3.1, +4.8, -1.0, +2.0, +16.2])
-    cura = np.array([+2.0, +4.7, +1.5, -3.5, +18.2])
+    # Δ mean test pp (cell mean across retained runs - default-family mean).
+    # Source: docs/experiment_detail.md per-cell test mean rows.
+    progressive_test = np.array([+2.30, +4.30, +0.67, +0.25, +16.20])
+    cura_test        = np.array([+2.39, +2.46, +1.17, -3.42, +18.20])
+
+    # Token savings % vs default-family best-by-test total/propose
+    # (positive = cheaper). Sign-flipped from pareto figure's dcost%.
+    progressive_save = np.array([+45.6, +28.1, +9.2, +9.2, -17.4])
+    cura_save        = np.array([+23.1, +37.4, +31.3, +25.6, -9.0])
 
     xs = np.arange(len(cells))
     width = 0.36
-    fig, ax = plt.subplots(figsize=(5.8, 3.2))
+    fig, ax = plt.subplots(figsize=(6.0, 3.4))
 
     bars_p = ax.bar(
         xs - width / 2,
-        progressive,
+        progressive_test,
         width,
         color=C_PROGRESSIVE,
         edgecolor="black",
@@ -84,7 +96,7 @@ def fig_optimization_effect():
     )
     bars_c = ax.bar(
         xs + width / 2,
-        cura,
+        cura_test,
         width,
         color=C_BANDIT,
         edgecolor="black",
@@ -95,11 +107,10 @@ def fig_optimization_effect():
     ax.axhline(0, color="grey", lw=0.7, ls="--", alpha=0.7)
     ax.set_xticks(xs)
     ax.set_xticklabels(cells)
-    ax.set_ylabel(r"$\Delta$ best test passrate vs full-context (pp)")
+    ax.set_ylabel(r"$\Delta$ mean test passrate vs full-context (pp)")
     ax.set_ylim(-5.5, 21)
     ax.grid(True, axis="y", ls=":", lw=0.4, color="grey", alpha=0.45)
     ax.set_axisbelow(True)
-    ax.legend(loc="upper left", ncol=1)
 
     for bars in (bars_p, bars_c):
         for bar in bars:
@@ -115,16 +126,53 @@ def fig_optimization_effect():
                 fontsize=6.8,
             )
 
-    ax.text(
-        4,
-        20.1,
-        "single 20-iter\nSWE run",
-        ha="center",
-        va="top",
-        fontsize=6.6,
-        color="#444444",
-        style="italic",
+    # Right axis: token savings % (positive = cheaper than full-context).
+    ax2 = ax.twinx()
+    ax2.spines["top"].set_visible(False)
+    ax2.set_ylabel("Token savings vs full-context (%)")
+    ax2.set_ylim(-30, 60)
+
+    ax2.scatter(
+        xs - width / 2,
+        progressive_save,
+        marker="D",
+        s=34,
+        facecolor="white",
+        edgecolor=C_PROGRESSIVE,
+        linewidth=1.1,
+        zorder=5,
+        label="Progressive savings",
     )
+    ax2.scatter(
+        xs + width / 2,
+        cura_save,
+        marker="D",
+        s=34,
+        facecolor="white",
+        edgecolor=C_BANDIT,
+        linewidth=1.1,
+        zorder=5,
+        label="CuraHarness savings",
+    )
+
+    for x, v in zip(xs - width / 2, progressive_save):
+        ax2.text(x, v + (1.6 if v >= 0 else -1.6), f"{v:+.0f}%",
+                 ha="center", va="bottom" if v >= 0 else "top",
+                 fontsize=6.4, color=C_PROGRESSIVE)
+    for x, v in zip(xs + width / 2, cura_save):
+        ax2.text(x, v + (1.6 if v >= 0 else -1.6), f"{v:+.0f}%",
+                 ha="center", va="bottom" if v >= 0 else "top",
+                 fontsize=6.4, color=C_BANDIT)
+
+    # Combined legend: bar handles for test-pp, marker handles for savings.
+    save_p = Line2D([0], [0], marker="D", color=C_PROGRESSIVE,
+                    markerfacecolor="white", markersize=6, linewidth=0,
+                    label="Progressive savings")
+    save_c = Line2D([0], [0], marker="D", color=C_BANDIT,
+                    markerfacecolor="white", markersize=6, linewidth=0,
+                    label="CuraHarness savings")
+    ax.legend(handles=[bars_p, bars_c, save_p, save_c],
+              loc="upper left", ncol=2, fontsize=7)
 
     fig.tight_layout()
     fig.savefig("optimization_effect.pdf", bbox_inches="tight")
