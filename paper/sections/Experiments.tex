@@ -1,0 +1,508 @@
+\section{Experiments}
+\label{sec:experiments}
+
+We design our experiments to answer three questions.
+\textbf{(Q1)~Cost--quality trade-off.}
+Does adaptive curation move the system onto a Pareto-favorable
+operating point relative to the uncurated full-context baseline?
+\textbf{(Q2)~SWE-bench transfer.}
+Do gains on the in-loop training pool transfer to a held-out
+verification suite?
+\textbf{(Q3)~Why does curation help, given same or fewer tool calls
+and file reads?}
+We trace the gain to a budget-conditioned action distribution: read
+volume stays roughly fixed across budget tiers, but read targets
+shift onto policy-labelled best-iteration directories, which receive
+$14\!-\!22\times$ more reads per available slot than unlabelled refs.
+
+\subsection{Setup}
+\label{sec:setup}
+\textbf{Benchmarks.}
+We evaluate \name on three benchmarks chosen to span the two failure
+modes our policies are designed to address: \emph{redundant iteration
+history} (long propose--evaluate traces with stale or failed attempts)
+and \emph{redundant file context} (large workspaces with many
+irrelevant files).
+\begin{itemize}[leftmargin=*,topsep=0pt]
+    \item \textbf{LoCoMo}~\cite{maharana2024locomo} is a multi-session
+    long-conversation benchmark whose inner harness is a conversational
+    memory system. The harness has many specialized components that
+    benefit from many refinement rounds, making it our main testbed for
+    joint iteration--file curation. We use a fixed 80/20 train/test
+    split (train80 / test20).
+    \item \textbf{LongMemEval}~\cite{wu2024longmemeval} is a long-term
+    memory benchmark whose inner harness is a memory-augmented
+    assistant tested on retrieval, temporal reasoning, and
+    consolidation across long histories. We use a 100/20 train/test
+    split (train100 / test20).
+    \item \textbf{SWE-bench Verified}~\cite{openai2024swebenchverified}
+    is a human-curated subset of 500 GitHub issues from 12 Python
+    repositories. We use \texttt{trainfirst30} as the in-loop training
+    pool and the full 500-issue split as held-out verification. SWE-bench
+    Verified verifies that the curation gains transfer to multi-file
+    coding agents.
+\end{itemize}
+
+\textbf{Inner-harness solvers.}
+On the memory benchmarks the inner harness is the MemGPT-style memory
+agent~\cite{packer2023memgpt} optimized by the proposer. On SWE-bench
+the inner-harness candidates are evaluated by a fixed Mini-SWE
+agent driven by DeepSeek~v4 Flash; this isolates harness-curation
+effects from inner-solver variance.
+
+\textbf{Proposer families.}
+We instantiate the meta-agent on top of two coding-agent scaffolds:
+\textbf{Codex}~\todo{cite Codex CLI} with GPT-5.4 as the backbone, and
+\textbf{Claude~Code}~\todo{cite Claude Code} with Kimi~K2.6 as the backbone. We refer to
+the two configurations as \emph{codex54} and \emph{claudekimi},
+respectively, and run both on the memory benchmarks. SWE-bench is run
+with claudekimi only.
+
+\textbf{Baseline.}
+The single end-to-end baseline is \textbf{Full-context}, the default
+Meta-Harness configuration~\cite{lee2026metaharness}: every iteration
+uses the full revision history and an unrestricted file tree, with no
+best/worst labelling. We aggregate two variants (\texttt{default} and
+\texttt{default+direction}) into a single \emph{default-family} cell
+because both fix the budget at \texttt{high} by construction.
+
+\textbf{Ablations within the iter axis.}
+To probe what part of the iter-axis design carries the gain, we
+include three constructed comparisons that vary the iter-selection
+rule while keeping all other context (source snapshot, cumulative
+summaries, file-tree exposure) identical:
+\begin{itemize}[leftmargin=*,topsep=0pt]
+    \item \textbf{Random@$k$} samples $k$ prior iterations uniformly
+    at random each propose.
+    \item \textbf{Recency@$k$} surfaces the $k$ most recent
+    iterations each propose.
+    \item \textbf{Force=low} and \textbf{Force=high} pin every
+    iteration of \name to a single budget tier, isolating the
+    contribution of the state machine from the contribution of the
+    budget tiers themselves.
+\end{itemize}
+We set $k\!=\!3$ to match the median ref-iter exposure of
+progressive's medium tier. Random@$k$ and Recency@$k$ are not
+deployment strategies; they exist only as ablations. Section~\ref{sec:ablation_iter}
+reports their results on LoCoMo / codex54.
+
+\textbf{Optimization protocol.}
+Each run executes 30 propose--evaluate iterations on the training
+split. We retain the candidate frontier under a passrate-priority
+Pareto rule with quality gap $\delta\!=\!0.125$. The reported
+\emph{train} score is the best train passrate of any retained
+candidate; the reported \emph{test} score is the held-out passrate of
+the train-best candidate when re-evaluated on the test split.
+In a non-trivial fraction of runs the train-best iteration is
+\emph{not} the test-best iteration: train passrate continues to
+climb across the run while the test-leading iter is often mid-run,
+so we additionally run per-iteration test eval on representative runs
+and report the best held-out test passrate as ``best test'' in
+Table~\ref{tab:main}.
+
+\textbf{Cost reporting.}
+We report per-propose token cost in millions of tokens
+(\texttt{total/propose}, including cache reads), summed over input,
+output, and cache-read tokens. Where mean$\pm$std test scores are
+reported across multiple retained runs, we use sample standard
+deviation; per-propose cost columns are taken from the best-by-test
+run in each cell, since cost is reported on the run we are actually
+proposing as the cell's representative result.
+
+\subsection{Cost--Quality Pareto on Memory Benchmarks (Q1)}
+\label{sec:results_main}
+
+Recall \name's two-axis design from Section~\ref{sec:method}: the
+iteration-axis policy decides which prior rounds to surface, and the
+file-axis policy then selects within those rounds which files the
+proposer sees. We evaluate two instantiations introduced in
+Sections~\ref{ssec:iteration} and~\ref{sec:bandit}.
+\textbf{Progressive} exercises only the iteration axis: a budget state
+machine surfaces best/worst-tagged ref-iter dirs but does not curate
+files within them. \textbf{Bandit} is the headline two-axis instantiation: it adds
+per-file UCB scoring on top of its own iteration-budget rule. We
+refer to it as \name throughout this section. Comparing both policies to the
+full-context \emph{default-family} baseline isolates how much of the
+gain comes from the iteration axis alone, and how much further is
+added when the file axis is layered on top.
+
+Table~\ref{tab:main} reports per-cell mean test, best-test, and
+per-propose token cost; Figure~\ref{fig:pareto} visualises the same
+data as a cost--quality scatter with curation depth as marker shape.
+
+\input{sections/tables/main_table}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{figures/pareto_cost_quality.pdf}
+  \vspace{-6pt}
+  \caption{Cost--quality Pareto on memory benchmarks. Each panel is one
+  (benchmark, proposer) cell; markers show the best-by-test retained
+  run for default ($\blacksquare$, no curation), Progressive
+  ($\bullet$, iter axis), and \name ($\blacktriangle$, joint
+  iter+file). Upper--left is the favourable region (less cost, higher
+  score). \name is the cheapest policy in three of four cells and
+  strictly dominates default in three; on LongMemEval codex54 it
+  occupies a distinct cost-frontier point ($-26\%$ cost, $-3.4$~pp
+  test) that did not exist before, instead of dominating.}
+  \label{fig:pareto}
+\end{figure}
+
+\textbf{Iteration-axis curation alone beats default on test in every
+cell.}
+Progressive's mean test passrate exceeds default-family in all four
+cells: $+2.3$~pp on LoCoMo claudekimi ($0.331 \!\to\! 0.355$),
+$+4.3$~pp on LoCoMo codex54 ($0.331 \!\to\! 0.374$), $+0.7$~pp on
+LongMemEval claudekimi ($0.498 \!\to\! 0.505$), and $+0.25$~pp on
+LongMemEval codex54 ($0.497 \!\to\! 0.499$). The two LoCoMo gains
+sit at $1.5\sigma$ and $3.2\sigma$ above the default-family std and
+are clear of run noise; the two LongMemEval gains are within run std
+and should be read as directional. Curating which prior iterations
+the proposer attends to, with no file-side curation, is sufficient
+to lift mean test.
+
+\textbf{\name reaches the Pareto frontier in every cell, with strict
+dominance in three and a cost-frontier trade-off in one.}
+\name is strictly cheaper than default in all four cells (savings
+$-23\%$ to $-37\%$, uniform across benchmarks and proposer families)
+and is the cheapest of the three policies in three of them. On test,
+\name strictly dominates default in three cells: $+2.4$~pp at $-23\%$
+cost on LoCoMo claudekimi, $+2.5$~pp at $-37\%$ on LoCoMo codex54,
+and $+1.2$~pp at $-31\%$ on LongMemEval claudekimi.
+The fourth cell, LongMemEval codex54, is the trade-off that motivates
+this method: \name scores $0.4625$ vs default $0.4967$ ($-3.4$~pp) at
+$-26\%$ token cost. Before \name, a user paying default's $2.93$M
+total/propose had no cheaper operating point with non-trivial test
+passrate; \name introduces a $2.18$M operating point within
+$3\!-\!4$~pp of default's score on the same proposer family. The
+cell sits on a Pareto frontier under \name by frontier expansion
+rather than dominance, which is the value of curation in
+token-constrained regimes.
+
+\textbf{The two axes contribute different reliability profiles.}
+Progressive's test direction is uniform (all four cells $\geq$
+default), but its cost saving varies widely with the
+(benchmark, proposer) combination: from $-46\%$ on LoCoMo claudekimi
+down to $-9\%$ on the two LongMemEval cells. The iteration-axis state
+machine substitutes for proposer exploration mainly when the
+candidate codebase is small enough that a direct prescription
+replaces a localization scan; on larger codebases the substitution
+weakens. \name's cost saving, by contrast, holds at $-23\%$ to
+$-37\%$ across all four cells, because the file-axis hot-pool caps
+how many workspace files the proposer is asked to consider. The
+iteration axis therefore carries the test-side signal, and the file
+axis converts that signal into uniform cost savings.
+
+\textbf{Why a longer initial prompt produces a lower per-propose
+total.}
+Both adaptive policies carry a longer initial prompt than default
+(claudekimi LoCoMo: bandit $9.97$\,KB, progressive $8.05$\,KB,
+default $6.68$\,KB) yet produce \emph{lower} per-propose totals.
+The fixed cost of the longer prompt is paid once per propose,
+while its reference content (best/worst iteration digests for bandit,
+state-machine direction for progressive) substitutes for a much
+larger amount of variable exploration cost: per-turn fresh output
+shrinks $-21$ to $-38\%$, tool turns shrink $-10$ to $-23\%$,
+and cache reads shrink $-25$ to $-34\%$ in the cells where the
+prefix is re-read across $\sim$40 turns. The net effect is a
+\emph{negative} marginal cost from carrying the curated prefix.
+For codex54 the same direction holds but the accounting differs:
+codex's \texttt{input\_tokens} includes the cached portion (the
+OpenAI Responses convention), so input and cache\_read move together
+($-37\%$ / $-38\%$ on LoCoMo bandit, $-25\%$ / $-26\%$ on LongMemEval
+bandit). Codex saves not by reducing accumulated turns, but by shortening the
+final-turn cumulative prefix. The mechanism is different from kimi's;
+the savings are comparable.
+
+\subsection{SWE-bench Verified (Q2)}
+\label{sec:swebench_main}
+
+The memory benchmarks above use a memory-augmented inner harness;
+SWE-bench Verified moves to a multi-file coding-agent harness and
+asks whether the same two-axis curation transfers. Optimization is
+run on the \texttt{trainfirst30} pool with the claudekimi proposer;
+the resulting harness candidates are re-evaluated on the full
+500-issue split.
+\input{sections/tables/swebench_table}
+
+The trainfirst30 train passrates compress all three policies into a
+narrow $0.5\!-\!0.53$ band, but \textbf{both curation layers produce
+large gains on the held-out full-500 split}: progressive lifts it by
+$+16.2$~pp ($0.458 \!\to\! 0.620$) and \name by $+18.2$~pp
+($0.458 \!\to\! 0.640$), the largest single gain in our experiments.
+The relative ordering of policies on test passrate matches Q1:
+iteration-axis curation alone closes most of the gap to default, and
+the file axis on top contributes the remaining margin.
+
+\todo{SWE-bench mini token-cost direction analysis: per-propose
+totals on the docs-only single-run data are 3.22M / 3.78M / 3.51M
+(default / progressive / \name), which is the opposite direction from
+the memory benchmarks. Hold off on the reversal narrative until more
+runs land; we want to confirm the +9\% cost / +18.2 pp test
+trade-off is stable across runs and not a single-run artifact.}
+
+The trainfirst30/full500 spread also confirms that the mechanism
+difference between full-context and curated context is masked when
+the in-loop pool is small, and surfaces only on the larger held-out
+distribution; we revisit this generalisation gap in the discussion.
+
+\subsection{Where the Gains Come From (Q3)}
+\label{sec:gains_live}
+
+Q1 leaves an open question. In most cells \name uses the same or
+fewer tool calls per propose and reads the same or fewer unique files
+than default-family (Table~\ref{tab:main}, tools/prop and
+read\_files/prop columns), yet attains a Pareto-favorable point on
+the cost frontier and beats default on test in three of four cells.
+With strictly less raw inspection effort, the proposer generalises
+at least as well. We trace this to a single mechanism: the curated
+prefix re-routes the proposer's bounded read budget onto
+policy-labelled best-iteration directories, replacing the recency
+tail that the default baseline relies on.
+
+The argument has three parts. The proposer's per-iteration read
+\emph{volume} is budget-invariant; what changes with budget is the
+\emph{target mix}. As the policy escalates, a growing share of
+reads lands on policy-surfaced reference-iteration directories,
+while source and summary reading hold fixed. Within those reference
+reads, the bandit's best-iter pointer concentrates $14\!-\!22\times$
+more reads per available slot on best-tagged directories than on
+unmarked refs. That concentration is the quantitative reason the
+iter-axis labels translate into the cost savings of Q1.
+
+\textbf{Most score-improving iterations happen at cheap tiers.}
+We define a \emph{breakthrough} as a propose--evaluate iteration whose
+candidate strictly improved on all earlier candidates in the same run
+under the passrate-priority Pareto rule. Across the 17 retained
+auto-budget memory runs (10 bandit, 7 progressive; both proposers),
+the 510 evaluated iterations contain 72 breakthroughs. Aggregated by
+the actual tier in which each breakthrough fired, $\mathbf{41/72 =
+57\%}$ happen at \texttt{low} or \texttt{medium} and only $43\%$ at
+\texttt{high}. More than half of the score-improving iterations are recovered
+without the full-history context that the default baseline always
+loads. The policies do not pay full-context price for the bulk of
+their optimization momentum, which directly supports the Pareto
+framing of Q1.
+
+\textbf{Read volume is bounded across budget tiers.}
+Aggregating per-iteration metrics across all 17 retained auto-budget
+runs (510 iterations), Table~\ref{tab:focus_not_volume} reveals two
+invariants under budget escalation. The exposed workspace file pool
+inflates by nearly an order of magnitude
+(bandit $1{,}222 \!\to\! 21{,}648$, $\sim$$17.7\times$; progressive
+$3{,}170 \!\to\! 21{,}790$, $\sim$$6.9\times$), yet the proposer's
+unique-files-read per iter barely moves
+($15.9 \!\to\! 19.2$ for bandit, $+21\%$; $17.5 \!\to\! 18.7$ for
+progressive, $+7\%$). The proposer self-throttles to roughly $20$
+unique reads per iter regardless of how many files are physically
+copied into the workspace.
+\input{sections/tables/focus_not_volume_table}
+The same throttle holds at the per-file level. The reread rate (Read
+calls divided by unique files read) sits at $\sim$$1.3$ reads per
+unique file across both policies and all three tiers, so per-file
+inspection depth is roughly fixed.
+
+\textbf{Budget changes the read target mix.}
+Eight claudekimi memory runs (240 iterations) carry a fine-grained
+\texttt{tool\_access.json} trace that decomposes each Read call into
+source code, in-tree summaries, or reference-iteration directories.
+Table~\ref{tab:read_decomp} re-aggregates reads by the actual budget
+tier the policy chose at that iteration.
+\input{sections/tables/read_decomp_table}
+Source reads stay in an $8\!-\!12$/propose band across all (policy,
+budget) cells with no monotone trend; the proposer always grounds the
+next edit in the current source. Summary reads are similarly
+tier-invariant ($\sim$$5\!-\!6$/propose). The reference-iteration
+channel is the part that scales: bandit reference reads grow
+$0.00 \!\to\! 7.23 \!\to\! 12.30$ (low/medium/high), and reference-iter
+reads as a share of all Reads move $0.0\% \!\to\! 31.2\% \!\to\!
+46.8\%$. Reference-line volume tracks the same monotone shape.
+Budget escalation therefore adds reads specifically from
+policy-surfaced reference-iter directories while source and summary
+reading hold steady. The line depth per ref-read is also tier-stable
+(medium $\sim$$59$ lines/ref-read, high $\sim$$57$), so ref reading
+scales by adding more targets, not by spending longer on each one.
+At \texttt{low} the proposer behaves as a pure source/summary worker;
+at \texttt{medium} and \texttt{high} the policy opens an additional
+ref-inspection channel and the proposer fills it with $\sim$$57$-line
+reads per surfaced directory.
+
+\textbf{Best-iter hints concentrate attention $14\!-\!22\times$ on
+the labelled directories.}
+Once the ref channel is open, which directories does the proposer
+actually read? We bucket every ref-iter Read call by how the bandit
+policy labelled the destination at that iteration
+(\texttt{best\_iterations}, the single \texttt{worst\_iteration}, or
+unlisted refs), and normalise by the number of available slots in
+each bucket (Figure~\ref{fig:read_concentration}, left).
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{figures/read_concentration.pdf}
+  \vspace{-6pt}
+  \caption{Reference-iteration reads-per-slot across three retained
+  LongMemEval claudekimi bandit runs (left three groups) and three
+  LongMemEval / LoCoMo \texttt{default+direction} runs bucketed by
+  recency (right three groups). \textbf{(left)}~A best-tagged
+  reference-iter dir receives $14\!-\!22\times$ more Read calls per
+  available slot than an unmarked reference dir; the worst-tagged dir
+  is read at the same rate as a random reference. \textbf{(right)}~Without
+  best/worst labels, the proposer falls back to a strong recency
+  prior: the most recent three iters are read $30\!-\!220\times$ more
+  often than the first three. Bandit's labels move attention back
+  into middle and early iterations the recency prior would otherwise
+  skip.}
+  \label{fig:read_concentration}
+\end{figure}
+
+Across three retained LongMemEval bandit runs, best-tagged dirs
+receive $2.70\!-\!3.67$ reads per available slot vs $0.13\!-\!0.25$
+for unmarked refs, a $\mathbf{14\!-\!22\times}$ concentration, and
+$133.9\!-\!258.9$ lines per slot vs $4.8\!-\!10.5$ lines per
+unmarked-ref slot. The worst-tagged dir sits at $0.12\!-\!0.44$
+reads/slot and zero read lines in all three runs; the proposer
+trusts the \texttt{best} hint and effectively ignores
+\texttt{worst}.
+By contrast, three \texttt{default+direction} runs that surface all
+prior iters without any label (Figure~\ref{fig:read_concentration},
+right) collapse the same metric to a recency-by-default pattern: the
+last three iters receive $2.24\!-\!2.93$ reads/slot vs the first
+three at $0.01\!-\!0.09$, a $30\!-\!220\times$ ratio. Re-bucketing
+the bandit runs by the same recency rule, middle iters under bandit
+receive $\sim$$2.3\times$ more reads/slot and early iters
+$\sim$$4.5\times$ more reads/slot than under
+\texttt{default+direction}. The best-iter labels pull proposer
+attention onto older iterations that the recency prior would
+otherwise skip.
+
+\todo{SWE-bench mini mechanism transfer analysis: preliminary numbers
+on 2 retained bandit\_v3 budgethigh runs + 1 default+direction run
+suggest summary tier-invariance and recency bias both transfer, but
+the $14\!-\!22\times$ best-iter concentration does not directly carry
+over because SWE-bench bandit\_v3 uses file-level hot/warm paths
+instead of \texttt{best\_iterations}. Defer the writeup until the
+bandit\_v4 SWE-bench runs (with explicit best/worst-iter pointers)
+finish, and add a third bandit\_v3 replicate.}
+
+\textbf{Mechanism summary.}
+The proposer's per-iteration read volume is roughly budget-invariant
+($\sim$20 unique reads, $\sim$1.3 reread rate, $\sim$57 lines per
+ref-read), so escalating budget does not buy additional inspection
+effort. What it buys is a different target distribution. Within that
+distribution, \name's \texttt{best\_iterations} pointer takes a
+$14\!-\!22\times$ share of the proposer's attention; the same fixed
+inspection budget that default-family spends on a recency-biased tail
+is redirected by \name onto historically productive
+iteration-and-file targets. The policy's labels, not the budget tier
+itself, drive the proposer's bounded attention, and this redirection
+is what produces the Pareto trade-off of Table~\ref{tab:main} and
+Figure~\ref{fig:pareto}.
+
+\subsection{Iter-axis policy ablation: bounded attention vs targeted
+attention}
+\label{sec:ablation_iter}
+
+The Q3 mechanism shows that within ref reads, best-iter labels
+concentrate $14\!-\!22\times$ more reads on the labelled directories.
+A natural follow-up is whether this targeting is necessary for the
+test-side gain over default, or whether merely \emph{bounding} the
+exposed iter set is enough. We test this with two iter-axis
+ablations that strip the labelling but preserve cardinality control:
+\textbf{Random@$3$} samples three prior iterations uniformly at
+random each propose, and \textbf{Recency@$3$} surfaces the three
+most recent iterations. Both keep the source snapshot, cumulative
+summaries, and file-tree exposure identical to other rows; only the
+iter-axis selection rule changes.
+\input{sections/tables/ablation_iter_axis_table}
+
+Table~\ref{tab:ablation_iter_axis} reports LoCoMo / codex54 results
+($n\!=\!3$ retained runs per row).
+
+\textbf{Bounded > full context, regardless of selection rule.}
+All four cardinality-bounded variants (Random@$3$, Recency@$3$,
+Progressive, \name) score above default-family on test passrate
+($+1.5$ to $+4.3$~pp), and all four are cheaper on per-propose tokens
+($-22\%$ to $-37\%$). The first lesson is that any cardinality bound,
+even a random one, helps in our optimization protocol.
+
+\textbf{Targeted $\approx$ random on the iter axis.}
+Random@$3$ scores $0.360 \pm 0.027$ on test, Recency@$3$
+$0.346 \pm 0.035$, Progressive $0.374 \pm 0.014$, and \name
+$0.355 \pm 0.027$. The four sit within $\sim$$3$~pp of each other,
+well inside cell std. Per-propose token costs are similarly clustered:
+Random@$3$ is $2.66$M, Recency@$3$ $2.72$M, Progressive $2.46$M,
+\name $2.14$M. Two structural properties of our setup explain why
+the targeting rule matters less than expected. The proposer rebuilds
+each candidate from the same baseline harness rather than
+incrementally patching the current best, so even an uninformative
+iter sample is recoverable as long as the proposer is not asked to
+digest the full history. And the read-decomposition data of
+Section~\ref{sec:gains_live} (Table~\ref{tab:read_decomp}) shows
+summary reads holding tier-invariant at $\sim$$5\!-\!6$ per propose:
+cumulative summaries form a persistent cross-session context channel
+that any iter-selection rule benefits from. Summaries carry the
+distilled prior signal even when the specific iter directories are
+chosen at random.
+
+\textbf{File-axis curation is the differentiator.}
+\name is still the cost leader at $2.14$M total/propose, $\sim$$20\%$
+cheaper than Random@$3$ and Recency@$3$ at comparable test passrate.
+The iter-axis labels concentrate ref reads but, as the random
+ablation shows, are not strictly required for the test-side gain
+over default. The file-axis UCB hot-pool is what pulls \name to a
+genuinely Pareto-favorable point: under matched cardinality, only
+\name reaches the cost frontier. The two-axis design adds a benefit
+that the iter axis alone cannot provide.
+
+The system-level reading is that cumulative summaries are
+load-bearing in this protocol: they keep the propose-evaluate loop
+robust to noisy iter selection, and they are the reason the iter-axis
+policy is interchangeable on this benchmark. Writing usable
+cross-session summaries is a prerequisite for any cardinality-bounded
+curation strategy, ours included.
+
+\subsection{Force-Budget Ablation}
+\label{sec:force_budget}
+
+The auto-budget runs of Q1--Q3 confound the contribution of the
+budget tier itself with the contribution of the policy's labels: when
+a run escalates from \texttt{low} to \texttt{high}, both the available
+ref-iter pool \emph{and} the policy-labelled best/worst pointers
+change at the same time. To separate these two factors we run six
+claudekimi \emph{force-budget} runs ($30$ iters each) that pin every
+iteration to a single tier, freezing the budget while the labels
+continue to update.
+Table~\ref{tab:force_budget} summarises the per-iteration behavioural
+signatures.
+\input{sections/tables/force_budget_table}
+
+Two clean findings follow.
+\textbf{(i)~Bandit at \texttt{force=low} almost completely removes the
+reference-iteration channel}: $0.02$ ref reads/propose, zero
+best-iter reads, and zero ref lines (vs $9.58$ ref reads and
+$7.84$ best-iter reads at \texttt{force=high}). The
+$36.4\% \!\to\! 0.1\%$ collapse in reference-iter read share is the
+controlled-ablation evidence that the bandit's
+\texttt{best\_iterations} pointer, not budget tier per se, is what
+drives reference-history reading. Despite this channel removal, LongMemEval bandit \texttt{force=low}
+reaches train $0.6300$ (the highest LongMemEval bandit train passrate
+on record, above \texttt{force=high}'s $0.5800$), so the file-prior
+channel alone (via the UCB hot-files pool) is sufficient on this
+benchmark. On
+LoCoMo, \texttt{force=low} reaches train $0.3875$ vs
+\texttt{force=high} $0.4000$, a small drop, indicating the
+reference-iteration channel adds modest value on smaller candidate
+codebases. The Pareto trade is benchmark-conditional, not
+absolute.
+\textbf{(ii)~Progressive at \texttt{force=low} still does reference
+reading} ($7.42$ ref reads, $30.5\%$ share, $652.4$ ref lines/iter)
+because the state-machine direction is partly encoded through which
+reference iters get surfaced. So ``\texttt{low} budget = no history''
+is a bandit-specific property, not a policy-agnostic one. Both
+\texttt{force=low} runs reach train passrates within $0.0\!-\!0.0125$
+of their auto-budget counterparts, indicating that most of the
+score-side benefit of the auto-budget state machine is already
+captured by the file-prior channel at \texttt{low}; the auto-budget
+escalation contributes additional ref-channel coverage on top of
+this.
+

@@ -1,0 +1,20 @@
+\begin{table}[t]
+\centering
+\small
+\caption{SWE-bench results. Optimization is run on
+\texttt{trainfirst30} with the claudekimi proposer; the resulting
+harness is re-evaluated on the full 500-issue
+SWE-bench~Verified split. Rows are stacked by curation depth as in
+Table~\ref{tab:main}. The $\Delta$ column reports the gain on the
+full split relative to the default row.}
+\label{tab:swebench}
+\begin{tabular}{@{}lrrrrrr@{}}
+\toprule
+Policy & trainfirst30 & full500 & $\Delta$ full500 & total/prop & tools/prop & files/prop \\
+\midrule
+default                              & 0.500 & 0.458 & ---           & 3.22M & 56.0 & 23.2 \\
+Progressive (iter)                   & 0.533 & 0.620 & $+16.2$\,pp   & 3.78M & 61.0 & 23.6 \\
+\name (iter+file, fixed-source) & 0.533 & $\mathbf{0.640}$ & $\mathbf{+18.2}$\,\textbf{pp} & 3.51M & 56.6 & 25.5 \\
+\bottomrule
+\end{tabular}
+\end{table}

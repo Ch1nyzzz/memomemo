@@ -1,0 +1,80 @@
+% ======== 编码与语言 ========
+% \usepackage[utf8]{inputenc}   % 现代 TeX Live 默认 UTF-8，可省
+\usepackage[english]{babel}
+
+% ======== 数学 ========
+\usepackage{amsmath, amssymb, amsthm, mathtools, mathrsfs}
+\usepackage{dsfont}             % \mathds{R} 等
+% 注意：删掉 bbold，与 dsfont 重复
+
+% ======== 图表 ========
+\usepackage{graphicx}
+\usepackage[export]{adjustbox}
+\usepackage{caption, subcaption}
+\usepackage{wrapfig}
+\usepackage{booktabs}
+\usepackage{array, multirow}
+\usepackage{tabularx, xltabular}
+\usepackage{makecell}
+\usepackage{nicematrix}
+
+% ======== TikZ / 绘图 ========
+\usepackage{tikz}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}   % 建议显式设置版本
+
+% ======== 算法 ========
+\usepackage{algorithm}
+\usepackage{algpseudocodex}
+
+% ======== 列表与排版 ========
+\usepackage{microtype}
+\usepackage{enumitem}
+\usepackage{setspace}
+\usepackage{indentfirst}
+\usepackage{numprint}
+\usepackage{balance}
+\usepackage[normalem]{ulem}
+\usepackage{soul}
+\usepackage{romannum}
+\usepackage{xspace}
+
+% ======== 颜色与盒子 ========
+\usepackage{xcolor}
+\usepackage{tcolorbox}
+\tcbuselibrary{skins, breakable, theorems}
+
+% ======== 其它 ========
+\usepackage{afterpage}
+\usepackage{textcomp}
+\usepackage{verbatim}
+
+\usepackage{pifont}
+\newcommand{\cmark}{\ding{51}}  % 绿色对勾
+\newcommand{\xmark}{\ding{55}}  % 红色叉号
+
+% ======== 自定义 tcolorbox ========
+\definecolor{promptDarkGreen}{RGB}{0, 128, 0}
+\definecolor{promptLightGreen}{RGB}{240, 250, 240}
+\definecolor{inputGray}{gray}{0.30}
+
+\newtcolorbox{examplebox}[1][]{
+    enhanced, colback=gray!10, colframe=gray!75,
+    sharp corners, boxrule=0.5pt, title=#1
+}
+
+\newtcolorbox{promptbox}[1]{
+    enhanced, breakable,
+    colback=promptLightGreen, colframe=promptDarkGreen,
+    coltitle=white, fonttitle=\bfseries\large,
+    title={#1},
+    sharp corners=south,
+    boxrule=1mm, arc=1mm,
+    width=\linewidth
+}
+
+\newtcolorbox{userinputbox}{
+    colback=white, colframe=gray!30,
+    boxrule=0.5mm, sharp corners,
+    left=2mm, right=2mm, top=2mm, bottom=2mm
+}
