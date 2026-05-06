@@ -58,11 +58,15 @@ C_PAREGION    = "#e8f4ea"     # very pale green wash for Pareto-favorable region
 # Figure 0: Optimization effect, grouped bars
 # ============================================================================
 def fig_optimization_effect():
-    """Grouped bars: Δmean test pp (left axis) + token savings % (right axis).
+    """Three-bar mirror chart per cell.
 
-    Both axes are oriented so that higher = better, so a cell where a
-    policy beats default on both quality and cost shows two markers above
-    zero on the same vertical strip.
+    Upper half (left y-axis): mean test passrate, bars going up.
+    Lower half (right y-axis): token consumption per propose (M tokens),
+    bars going down.
+
+    Three policies side-by-side: full-context baseline, Progressive,
+    CuraHarness. Both axes share y=0 so the same vertical strip shows
+    quality on top and cost on bottom for the same (cell, policy).
     """
     cells = [
         "LoCoMo\n/kimi",
@@ -71,108 +75,81 @@ def fig_optimization_effect():
         "LongMem\n/codex",
         "SWE\n/kimi",
     ]
-    # Δ mean test pp (cell mean across retained runs - default-family mean).
-    # Source: docs/experiment_detail.md per-cell test mean rows.
-    progressive_test = np.array([+2.30, +4.30, +0.67, +0.25, +16.20])
-    cura_test        = np.array([+2.39, +2.46, +1.17, -3.42, +18.20])
+    # Mean test passrate per cell (default-family / progressive / cura mean
+    # across retained runs). Source: docs/experiment_detail.md.
+    # SWE row is single docs-only run (mean = the single value).
+    baseline_test    = np.array([0.3315, 0.3308, 0.4983, 0.4967, 0.4580])
+    progressive_test = np.array([0.3545, 0.3738, 0.5050, 0.4992, 0.6200])
+    cura_test        = np.array([0.3554, 0.3554, 0.5100, 0.4625, 0.6400])
 
-    # Token savings % vs default-family best-by-test total/propose
-    # (positive = cheaper). Sign-flipped from pareto figure's dcost%.
-    progressive_save = np.array([+45.6, +28.1, +9.2, +9.2, -17.4])
-    cura_save        = np.array([+23.1, +37.4, +31.3, +25.6, -9.0])
+    # Token consumption per propose (M tokens), best-by-test row per cell.
+    baseline_tok    = np.array([3.42, 3.42, 3.71, 2.93, 3.22])
+    progressive_tok = np.array([1.86, 2.46, 3.37, 2.66, 3.78])
+    cura_tok        = np.array([2.63, 2.14, 2.55, 2.18, 3.51])
 
     xs = np.arange(len(cells))
-    width = 0.36
-    fig, ax = plt.subplots(figsize=(6.0, 3.4))
+    width = 0.26
+    offsets = np.array([-width, 0.0, +width])
 
-    bars_p = ax.bar(
-        xs - width / 2,
-        progressive_test,
-        width,
-        color=C_PROGRESSIVE,
-        edgecolor="black",
-        linewidth=0.5,
-        label="Progressive",
-    )
-    bars_c = ax.bar(
-        xs + width / 2,
-        cura_test,
-        width,
-        color=C_BANDIT,
-        edgecolor="black",
-        linewidth=0.5,
-        label="CuraHarness",
-    )
+    fig, ax = plt.subplots(figsize=(6.4, 3.8))
+    ax2 = ax.twinx()
 
-    ax.axhline(0, color="grey", lw=0.7, ls="--", alpha=0.7)
+    # Upper half: mean test passrate
+    bars_b = ax.bar(xs + offsets[0], baseline_test, width,
+                    color=C_DEFAULT, edgecolor="black", linewidth=0.5,
+                    label="Full-context baseline")
+    bars_p = ax.bar(xs + offsets[1], progressive_test, width,
+                    color=C_PROGRESSIVE, edgecolor="black", linewidth=0.5,
+                    label="Progressive")
+    bars_c = ax.bar(xs + offsets[2], cura_test, width,
+                    color=C_BANDIT, edgecolor="black", linewidth=0.5,
+                    label="CuraHarness")
+
+    # Lower half: token consumption (drawn as negative on ax2 so bars go down)
+    ax2.bar(xs + offsets[0], -baseline_tok, width,
+            color=C_DEFAULT, edgecolor="black", linewidth=0.5, alpha=0.85)
+    ax2.bar(xs + offsets[1], -progressive_tok, width,
+            color=C_PROGRESSIVE, edgecolor="black", linewidth=0.5, alpha=0.85)
+    ax2.bar(xs + offsets[2], -cura_tok, width,
+            color=C_BANDIT, edgecolor="black", linewidth=0.5, alpha=0.85)
+
+    # Symmetric limits sharing y=0
+    ax.set_ylim(-0.80, 0.80)
+    ax2.set_ylim(-4.5, 4.5)  # in M tokens; 0 aligned with ax
+
+    ax.axhline(0, color="black", lw=0.8)
     ax.set_xticks(xs)
     ax.set_xticklabels(cells)
-    ax.set_ylabel(r"$\Delta$ mean test passrate vs full-context (pp)")
-    ax.set_ylim(-5.5, 21)
+    ax.set_ylabel("Mean test passrate                                   ")
+    ax2.set_ylabel("                                   Token consumption (M / propose)")
     ax.grid(True, axis="y", ls=":", lw=0.4, color="grey", alpha=0.45)
     ax.set_axisbelow(True)
 
-    for bars in (bars_p, bars_c):
-        for bar in bars:
-            value = bar.get_height()
-            va = "bottom" if value >= 0 else "top"
-            dy = 0.45 if value >= 0 else -0.45
-            ax.text(
-                bar.get_x() + bar.get_width() / 2,
-                value + dy,
-                f"{value:+.1f}",
-                ha="center",
-                va=va,
-                fontsize=6.8,
-            )
+    # Hide negative y-tick labels on ax (lower half belongs to ax2)
+    ax.set_yticks([0.0, 0.2, 0.4, 0.6, 0.8])
+    # Hide positive y-tick labels on ax2 (upper half belongs to ax); show
+    # token magnitudes as positive numbers in lower half.
+    ax2.set_yticks([-4, -3, -2, -1, 0])
+    ax2.set_yticklabels(["4", "3", "2", "1", "0"])
 
-    # Right axis: token savings % (positive = cheaper than full-context).
-    ax2 = ax.twinx()
-    ax2.spines["top"].set_visible(False)
-    ax2.set_ylabel("Token savings vs full-context (%)")
-    ax2.set_ylim(-30, 60)
+    # Value labels
+    for offset, vals in zip(offsets, (baseline_test, progressive_test, cura_test)):
+        for x, v in zip(xs + offset, vals):
+            ax.text(x, v + 0.012, f"{v:.2f}",
+                    ha="center", va="bottom", fontsize=6.4)
+    for offset, vals in zip(offsets, (baseline_tok, progressive_tok, cura_tok)):
+        for x, v in zip(xs + offset, vals):
+            ax2.text(x, -v - 0.08, f"{v:.2f}",
+                     ha="center", va="top", fontsize=6.4)
 
-    ax2.scatter(
-        xs - width / 2,
-        progressive_save,
-        marker="D",
-        s=34,
-        facecolor="white",
-        edgecolor=C_PROGRESSIVE,
-        linewidth=1.1,
-        zorder=5,
-        label="Progressive savings",
-    )
-    ax2.scatter(
-        xs + width / 2,
-        cura_save,
-        marker="D",
-        s=34,
-        facecolor="white",
-        edgecolor=C_BANDIT,
-        linewidth=1.1,
-        zorder=5,
-        label="CuraHarness savings",
-    )
+    # Section labels on the y-axis
+    ax.text(-0.55, 0.40, "quality ↑", rotation=90, va="center", ha="center",
+            fontsize=7.5, color="#444444", style="italic")
+    ax.text(-0.55, -0.40, "cost ↓ (better)", rotation=90, va="center",
+            ha="center", fontsize=7.5, color="#444444", style="italic")
 
-    for x, v in zip(xs - width / 2, progressive_save):
-        ax2.text(x, v + (1.6 if v >= 0 else -1.6), f"{v:+.0f}%",
-                 ha="center", va="bottom" if v >= 0 else "top",
-                 fontsize=6.4, color=C_PROGRESSIVE)
-    for x, v in zip(xs + width / 2, cura_save):
-        ax2.text(x, v + (1.6 if v >= 0 else -1.6), f"{v:+.0f}%",
-                 ha="center", va="bottom" if v >= 0 else "top",
-                 fontsize=6.4, color=C_BANDIT)
-
-    # Combined legend: bar handles for test-pp, marker handles for savings.
-    save_p = Line2D([0], [0], marker="D", color=C_PROGRESSIVE,
-                    markerfacecolor="white", markersize=6, linewidth=0,
-                    label="Progressive savings")
-    save_c = Line2D([0], [0], marker="D", color=C_BANDIT,
-                    markerfacecolor="white", markersize=6, linewidth=0,
-                    label="CuraHarness savings")
-    ax.legend(handles=[bars_p, bars_c, save_p, save_c],
-              loc="upper left", ncol=2, fontsize=7)
+    ax.legend(handles=[bars_b, bars_p, bars_c],
+              loc="upper right", ncol=3, fontsize=7.5)
 
     fig.tight_layout()
     fig.savefig("optimization_effect.pdf", bbox_inches="tight")
