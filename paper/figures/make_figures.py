@@ -5,10 +5,19 @@ All numbers are pulled verbatim from
     docs/experiment_detail.md
 of the MemoMemo repo (see paper README for the docs commit pinned).
 
-Three figures:
-    pareto_cost_quality.pdf   -- 2x2 cost-vs-test scatter
-    breakthrough_rate.pdf     -- per-iter breakthrough rate by budget tier
-    read_concentration.pdf    -- read distribution (bandit vs default+direction)
+Two figures, each defending one experimental claim of Experiments.tex:
+
+    pareto_cost_quality.{pdf,svg}
+        Single-panel scatter of (delta cost %, delta test pp) versus
+        the default-family baseline. Each marker = one (benchmark,
+        proposer, policy) triple, taken from the single best-by-test
+        retained run in that cell. Default sits at the origin.
+
+    read_concentration.{pdf,svg}
+        Single-panel grouped bar of reads per available reference-iter
+        slot, with bandit best/worst/other and default+direction
+        recent/middle/early shown on a shared Y axis. Three retained
+        runs per policy collapsed to mean +/- range.
 """
 
 from __future__ import annotations
@@ -16,260 +25,279 @@ from __future__ import annotations
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.lines import Line2D
-from matplotlib.patches import Patch
+from matplotlib.patches import Patch, Rectangle
 
-# --- Nature-leaning rcParams: sans-serif, editable text, vector PDFs ---------
-plt.rcParams["font.family"] = "sans-serif"
-plt.rcParams["font.sans-serif"] = ["Arial", "DejaVu Sans", "Liberation Sans"]
-plt.rcParams["svg.fonttype"] = "none"
-plt.rcParams["pdf.fonttype"] = 42
-plt.rcParams["ps.fonttype"] = 42
-plt.rcParams["axes.spines.top"] = False
-plt.rcParams["axes.spines.right"] = False
-plt.rcParams["axes.linewidth"] = 0.7
-plt.rcParams["axes.labelsize"] = 9
-plt.rcParams["axes.titlesize"] = 10
-plt.rcParams["xtick.labelsize"] = 8
-plt.rcParams["ytick.labelsize"] = 8
-plt.rcParams["legend.fontsize"] = 8
-plt.rcParams["legend.frameon"] = False
-plt.rcParams["figure.dpi"] = 150
+# ------------------------------------------------------------------
+# Nature-leaning rcParams: editable text, restrained spines/grids.
+# ------------------------------------------------------------------
+plt.rcParams.update({
+    "font.family":          "sans-serif",
+    "font.sans-serif":      ["Arial", "DejaVu Sans", "Liberation Sans"],
+    "svg.fonttype":         "none",
+    "pdf.fonttype":         42,
+    "ps.fonttype":          42,
+    "axes.spines.top":      False,
+    "axes.spines.right":    False,
+    "axes.linewidth":       0.7,
+    "axes.labelsize":       8.5,
+    "axes.titlesize":       9,
+    "xtick.labelsize":      7.5,
+    "ytick.labelsize":      7.5,
+    "legend.fontsize":      7.5,
+    "legend.frameon":       False,
+    "figure.dpi":           150,
+})
 
-# Okabe-Ito colorblind-safe palette
-C_DEFAULT = "#3a3a3a"      # dark grey for default
-C_BANDIT = "#0072B2"        # blue
-C_PROGRESSIVE = "#D55E00"   # vermilion
-C_RECENT = "#56B4E9"        # sky-blue
-C_MIDDLE = "#009E73"        # bluish-green
-C_EARLY = "#CC79A7"         # mauve
+# Restrained palette: one neutral family for default, one signal
+# family for the two adaptive policies. Okabe-Ito-derived, accessible.
+C_DEFAULT     = "#3a3a3a"     # neutral grey for the default origin marker
+C_PROGRESSIVE = "#D55E00"     # vermilion for iter-axis only
+C_BANDIT      = "#0072B2"     # blue for iter+file (CuraHarness)
+C_RECENT      = "#56B4E9"     # sky for default+direction recency bucket
+C_PAREGION    = "#e8f4ea"     # very pale green wash for Pareto-favorable region
 
 
 # ============================================================================
-# Figure 1: Pareto cost vs quality
+# Figure 1: Pareto cost vs quality, single panel, delta-vs-default coords
 # ============================================================================
 def fig_pareto():
-    """4-panel scatter of total/propose vs best test, one per (bench, proposer)."""
-    # (cell name, [(policy, total_per_propose_M, best_test)])
-    cells = [
-        ("LoCoMo / claudekimi", [
-            ("default", 3.42, 0.3423),
-            ("bandit", 2.63, 0.3616),
-            ("progressive", 1.86, 0.3734),
-        ]),
-        ("LoCoMo / codex54", [
-            ("default", 3.42, 0.3402),
-            ("bandit", 2.14, 0.3865),
-            ("progressive", 2.46, 0.3879),
-        ]),
-        ("LongMemEval / claudekimi", [
-            ("default", 3.71, 0.5300),
-            ("bandit", 2.55, 0.5450),
-            ("progressive", 3.37, 0.5200),
-        ]),
-        ("LongMemEval / codex54", [
-            ("default", 2.93, 0.5075),
-            ("bandit", 2.18, 0.4725),
-            ("progressive", 2.66, 0.5275),
-        ]),
+    """Single panel scatter on (delta cost %, delta best-test pp) coords."""
+    # ----- data -----------------------------------------------------------
+    # Each row: cell, proposer-suffix, policy, dcost%, dtest_pp.
+    # Numbers are computed from EXPERIMENT_INSIGHTS / experiment_detail
+    # against each cell's default-family best-by-test row.
+    points = [
+        # LoCoMo / claudekimi:  default 3.42M, 0.342
+        ("LoCoMo",       "claudekimi", "Progressive",  -45.6, +3.1),
+        ("LoCoMo",       "claudekimi", "Bandit",       -23.1, +2.0),
+        # LoCoMo / codex54:     default 3.42M, 0.340
+        ("LoCoMo",       "codex54",    "Progressive",  -28.1, +4.8),
+        ("LoCoMo",       "codex54",    "Bandit",       -37.4, +4.7),
+        # LongMemEval / claudekimi: default 3.71M, 0.530
+        ("LongMemEval",  "claudekimi", "Progressive",   -9.2, -1.0),
+        ("LongMemEval",  "claudekimi", "Bandit",       -31.3, +1.5),
+        # LongMemEval / codex54:    default 2.93M, 0.508
+        ("LongMemEval",  "codex54",    "Progressive",   -9.2, +2.0),
+        ("LongMemEval",  "codex54",    "Bandit",       -25.6, -3.5),
+        # SWE-bench Verified / claudekimi: default 3.22M, 0.458 verified
+        ("SWE-bench",    "claudekimi", "Progressive",  +17.4, +16.2),
+        ("SWE-bench",    "claudekimi", "Bandit",        +9.0, +18.2),
     ]
 
-    style = {
-        "default": dict(color=C_DEFAULT, marker="s", label="Full-context (default)",
-                         short="default"),
-        "progressive": dict(color=C_PROGRESSIVE, marker="o", label="Progressive (iter axis)",
-                             short="Progressive"),
-        "bandit": dict(color=C_BANDIT, marker="^", label="CuraHarness (iter + file)",
-                        short="CuraHarness"),
+    # marker shape encodes (benchmark, proposer); color encodes policy
+    marker_for = {
+        ("LoCoMo",      "claudekimi"): "o",
+        ("LoCoMo",      "codex54"):    "s",
+        ("LongMemEval", "claudekimi"): "D",
+        ("LongMemEval", "codex54"):    "^",
+        ("SWE-bench",   "claudekimi"): "*",
+    }
+    color_for = {
+        "Progressive": C_PROGRESSIVE,
+        "Bandit":      C_BANDIT,
     }
 
-    fig, axes = plt.subplots(2, 2, figsize=(7.0, 5.0), sharex=False, sharey=False)
-    for ax, (title, points) in zip(axes.flat, cells):
-        # arrow showing "favourable" direction (upper-left)
-        for policy, x, y in points:
-            s = style[policy]
-            ax.scatter(x, y, s=85, edgecolor="black", linewidths=0.6,
-                       zorder=3, color=s["color"], marker=s["marker"])
-            ax.annotate(s["short"], xy=(x, y), xytext=(4, 4),
-                        textcoords="offset points", fontsize=7,
-                        color=s["color"])
-        # find pareto frontier among the three points
-        xs = [p[1] for p in points]
-        ys = [p[2] for p in points]
-        # compute pareto-favorable corner (lowest x, highest y of the 3)
-        pareto_x = min(xs) - 0.15
-        pareto_y = max(ys) + 0.005
-        ax.annotate("", xy=(pareto_x, pareto_y),
-                    xytext=(pareto_x + 0.7, pareto_y - 0.01),
-                    arrowprops=dict(arrowstyle="->", color="grey",
-                                    lw=0.8, alpha=0.7))
-        ax.text(pareto_x + 0.05, pareto_y - 0.005, "Pareto-favourable",
-                fontsize=6.5, color="grey", style="italic")
+    fig, ax = plt.subplots(figsize=(5.5, 3.6))
 
-        ax.set_title(title, fontsize=9, pad=4)
-        ax.set_xlabel("Tokens per propose  (M)")
-        ax.set_ylabel("Best test passrate")
-        ax.grid(True, ls=":", lw=0.4, color="grey", alpha=0.5)
-        ax.set_xlim(min(xs) - 0.5, max(xs) + 0.6)
-        ax.set_ylim(min(ys) - 0.02, max(ys) + 0.02)
-        ax.tick_params(axis="both", which="both", length=2.5)
+    # ----- background regions -------------------------------------------
+    # Pareto-favorable = upper-left (delta cost <= 0, delta test >= 0).
+    ax.axhspan(-100, 100, xmin=0, xmax=0.5, facecolor=C_PAREGION,
+               alpha=0.0)  # placeholder so shading respects later xlim
+    # we draw the actual rectangle after lim is set, see below
 
-    handles = [Line2D([0], [0], marker=s["marker"], color="w",
-                       markerfacecolor=s["color"], markeredgecolor="black",
-                       markersize=8, label=s["label"])
-               for s in style.values()
-               if "label" in s]
-    fig.legend(handles=handles, loc="lower center", ncol=3,
-               bbox_to_anchor=(0.5, -0.02), fontsize=8)
-    fig.tight_layout(rect=[0, 0.04, 1, 1])
+    # zero crosshairs through the default origin
+    ax.axhline(0, color="grey", lw=0.7, ls="--", alpha=0.6, zorder=1)
+    ax.axvline(0, color="grey", lw=0.7, ls="--", alpha=0.6, zorder=1)
+
+    # ----- scatter ------------------------------------------------------
+    for bench, prop, policy, dx, dy in points:
+        m = marker_for[(bench, prop)]
+        c = color_for[policy]
+        # SWE-bench gets a slightly larger * marker since the shape
+        # is visually thinner than D / ^ at equal s value
+        s = 110 if m == "*" else 70
+        ax.scatter(dx, dy, marker=m, s=s, color=c,
+                   edgecolor="black", linewidths=0.55, zorder=4)
+
+    # default origin marker (the baseline anchor)
+    ax.scatter(0, 0, marker="X", s=80, color=C_DEFAULT,
+               edgecolor="black", linewidths=0.6, zorder=5)
+    ax.annotate("default\n(baseline)", xy=(0, 0), xytext=(6, 6),
+                textcoords="offset points", fontsize=7.0,
+                color=C_DEFAULT)
+
+    # ----- annotate one cell label per (bench, proposer) pair -----------
+    # Pick the geometrically more visible point of the two policies in
+    # each cell so the label sits cleanly. Cell color = neutral grey
+    # because the label refers to the cell, not to a single policy.
+    cell_label_anchor = {
+        # (bench, proposer): which policy point to anchor on, plus
+        # (dx_pt, dy_pt, ha) text offset.
+        ("LoCoMo",      "claudekimi"): ("Progressive",  +6, +6, "left"),
+        ("LoCoMo",      "codex54"):    ("Bandit",       -5, +6, "right"),
+        ("LongMemEval", "claudekimi"): ("Bandit",       -5, +5, "right"),
+        ("LongMemEval", "codex54"):    ("Bandit",       +5, -8, "left"),
+        ("SWE-bench",   "claudekimi"): ("Bandit",      +10, +2, "left"),
+    }
+    points_by_key = {(b, p, pol): (dx, dy)
+                     for b, p, pol, dx, dy in points}
+    for (bench, prop), (anchor_pol, ox, oy, ha) in cell_label_anchor.items():
+        dx, dy = points_by_key[(bench, prop, anchor_pol)]
+        short = {"claudekimi": "/kimi", "codex54": "/codex"}[prop]
+        ax.annotate(f"{bench}{short}", xy=(dx, dy),
+                    xytext=(ox, oy), textcoords="offset points",
+                    fontsize=6.6, color="#444444", ha=ha)
+
+    # axis range and Pareto-favorable wash --------------------------------
+    ax.set_xlim(-52, 28)
+    ax.set_ylim(-7.0, 23)
+    # Now that lim is fixed, draw the Pareto-favorable rectangle
+    ax.add_patch(Rectangle((-52, 0), 52, 23,
+                            facecolor=C_PAREGION, alpha=0.7,
+                            edgecolor="none", zorder=0))
+    ax.text(-50, 22, "Pareto-favorable (less cost, higher score)",
+            fontsize=6.4, color="#3d6f4d", style="italic",
+            ha="left", va="top")
+
+    # axes / labels ------------------------------------------------------
+    ax.set_xlabel(r"$\Delta$ tokens per propose vs default  (%)")
+    ax.set_ylabel(r"$\Delta$ best test passrate vs default  (pp)")
+    ax.tick_params(axis="both", which="both", length=2.5)
+    ax.grid(True, ls=":", lw=0.4, color="grey", alpha=0.4)
+    ax.set_axisbelow(True)
+
+    # legend: split into two stacked groups (policy color + cell shape) --
+    policy_handles = [
+        Line2D([0], [0], marker="o", color="w",
+               markerfacecolor=C_PROGRESSIVE, markeredgecolor="black",
+               markersize=7, label="Progressive (iter axis)"),
+        Line2D([0], [0], marker="o", color="w",
+               markerfacecolor=C_BANDIT, markeredgecolor="black",
+               markersize=7, label="CuraHarness (iter + file)"),
+        Line2D([0], [0], marker="X", color="w",
+               markerfacecolor=C_DEFAULT, markeredgecolor="black",
+               markersize=7, label="default-family"),
+    ]
+    cell_handles = [
+        Line2D([0], [0], marker="o", color="w",
+               markerfacecolor="lightgrey", markeredgecolor="black",
+               markersize=7, label="LoCoMo / kimi"),
+        Line2D([0], [0], marker="s", color="w",
+               markerfacecolor="lightgrey", markeredgecolor="black",
+               markersize=7, label="LoCoMo / codex"),
+        Line2D([0], [0], marker="D", color="w",
+               markerfacecolor="lightgrey", markeredgecolor="black",
+               markersize=6.5, label="LongMemEval / kimi"),
+        Line2D([0], [0], marker="^", color="w",
+               markerfacecolor="lightgrey", markeredgecolor="black",
+               markersize=7, label="LongMemEval / codex"),
+        Line2D([0], [0], marker="*", color="w",
+               markerfacecolor="lightgrey", markeredgecolor="black",
+               markersize=9, label="SWE-bench / kimi"),
+    ]
+    leg1 = ax.legend(handles=policy_handles, loc="lower left",
+                      bbox_to_anchor=(1.01, 0.55), title="Policy",
+                      title_fontsize=8, fontsize=7.2, borderaxespad=0)
+    ax.add_artist(leg1)
+    ax.legend(handles=cell_handles, loc="lower left",
+              bbox_to_anchor=(1.01, 0.0), title="Benchmark / proposer",
+              title_fontsize=8, fontsize=7.2, borderaxespad=0)
+
+    fig.tight_layout(rect=[0, 0, 0.78, 1])
     fig.savefig("pareto_cost_quality.pdf", bbox_inches="tight")
     fig.savefig("pareto_cost_quality.svg", bbox_inches="tight")
     plt.close(fig)
 
 
 # ============================================================================
-# Figure 2: Breakthrough rate by budget x iter range
-# ============================================================================
-def fig_breakthrough_rate():
-    """Grouped bar chart: warm-up (iters 1-5) vs late (iters 6-30) breakthrough rates."""
-    # Counts derived from EXPERIMENT_INSIGHTS:
-    #   full horizon by tier (auto-budget, n=17): low 22, med 19, high 31 (total 72)
-    #     iters by tier (auto-budget): low 62, med 156, high 292 (total 510)
-    #   post-iter-5 by tier: brk 3/4/31 over 17/116/292 iters
-    #   warm-up by tier (full - post5): brk 19/15/0 over 45/40/0 iters
-    groups = {
-        "Warm-up\n(iters 1-5)": {
-            "low": (19, 45),
-            "medium": (15, 40),
-            "high": (0, 0),     # no exposure
-        },
-        "Late horizon\n(iters 6-30)": {
-            "low": (3, 17),
-            "medium": (4, 116),
-            "high": (31, 292),
-        },
-    }
-    tiers = ["low", "medium", "high"]
-    colors = {
-        "low":     "#9ecae1",
-        "medium":  "#4292c6",
-        "high":    "#08519c",
-    }
-
-    fig, ax = plt.subplots(figsize=(5.6, 3.4))
-    width = 0.24
-    xs = np.arange(len(groups))
-    for i, tier in enumerate(tiers):
-        rates = []
-        labels = []
-        for grp, vals in groups.items():
-            brk, n = vals[tier]
-            rate = (brk / n * 100) if n > 0 else np.nan
-            rates.append(rate)
-            labels.append(f"{brk}/{n}")
-        offset = (i - 1) * width
-        bars = ax.bar(xs + offset, rates, width=width,
-                       color=colors[tier], edgecolor="black",
-                       linewidth=0.5, label=tier)
-        # annotate counts above bars; for NaN show "no exp."
-        for j, (b, lbl, r) in enumerate(zip(bars, labels, rates)):
-            if np.isnan(r):
-                ax.text(b.get_x() + b.get_width() / 2, 1.0,
-                        "no\nexposure", ha="center", va="bottom",
-                        fontsize=6.5, color="grey", style="italic")
-            else:
-                ax.text(b.get_x() + b.get_width() / 2, r + 0.6,
-                        lbl, ha="center", va="bottom", fontsize=6.5,
-                        color="black")
-
-    ax.set_xticks(xs)
-    ax.set_xticklabels(list(groups.keys()))
-    ax.set_ylabel("Per-iter breakthrough rate  (%)")
-    ax.set_ylim(0, max(50, ax.get_ylim()[1]))
-    ax.legend(title="Budget tier", loc="upper right",
-              ncol=1, fontsize=7.5, title_fontsize=8)
-    ax.grid(True, axis="y", ls=":", lw=0.4, color="grey", alpha=0.5)
-    ax.set_axisbelow(True)
-    fig.tight_layout()
-    fig.savefig("breakthrough_rate.pdf", bbox_inches="tight")
-    fig.savefig("breakthrough_rate.svg", bbox_inches="tight")
-    plt.close(fig)
-
-
-# ============================================================================
-# Figure 3: Read concentration -- bandit best/worst/other vs default+dir recency
+# Figure 2: Read concentration -- bandit best/worst/other vs default recency
 # ============================================================================
 def fig_read_concentration():
-    """Two-panel grouped bar: bandit best-tag concentration | default+dir recency bias."""
-    # Left panel: bandit reads/slot by bucket per run
-    bandit_runs = ["banditfix\nr1", "banditfix\nr2", "v4\nr1"]
-    bandit_data = {
-        "best-iter dirs":  [3.67, 2.70, 3.45],
-        "worst-iter dir":  [0.12, 0.22, 0.44],
-        "other ref dirs":  [0.17, 0.13, 0.25],
-    }
-    # Right panel: default+direction reads/slot by recency bucket per run
-    dd_runs = ["LME\n(015454)", "LME\n(152524)", "LoCoMo\n(015441)"]
-    dd_data = {
-        "recent (last 3)":  [2.24, 2.23, 2.93],
-        "middle":           [0.31, 0.68, 0.39],
-        "early (first 3)":  [0.04, 0.01, 0.09],
-    }
+    """Single-panel grouped bar with bandit and default+dir on same Y axis.
 
-    fig, axes = plt.subplots(1, 2, figsize=(7.5, 3.3), sharey=True)
+    All numbers are mean across three retained runs per policy
+    (EXPERIMENT_INSIGHTS Reference-Iteration Read Distribution).
+    """
+    # bandit (3 runs): bandit_v3_banditfix r1/r2 + bandit_v4 r1
+    bandit_best  = np.mean([3.67, 2.70, 3.45])    # 3.273
+    bandit_worst = np.mean([0.12, 0.22, 0.44])    # 0.260
+    bandit_other = np.mean([0.17, 0.13, 0.25])    # 0.183
+    # default+direction (3 runs): LME 015454 / 152524 + LoCoMo 015441
+    dd_recent  = np.mean([2.24, 2.23, 2.93])      # 2.467
+    dd_middle  = np.mean([0.31, 0.68, 0.39])      # 0.460
+    dd_early   = np.mean([0.04, 0.01, 0.09])      # 0.047
 
-    # Left
-    ax = axes[0]
-    width = 0.25
-    xs = np.arange(len(bandit_runs))
-    bandit_colors = {
-        "best-iter dirs":  C_BANDIT,
-        "worst-iter dir":  "#9bbcd1",
-        "other ref dirs":  "#cccccc",
-    }
-    for i, (label, vals) in enumerate(bandit_data.items()):
-        offset = (i - 1) * width
-        bars = ax.bar(xs + offset, vals, width=width,
-                       color=bandit_colors[label], edgecolor="black",
-                       linewidth=0.5, label=label)
-        for b, v in zip(bars, vals):
-            ax.text(b.get_x() + b.get_width() / 2, v + 0.06,
-                    f"{v:.2f}", ha="center", va="bottom",
-                    fontsize=6.5, color="black")
+    # report range as error bars to show run-to-run spread
+    bandit_best_err  = np.array([[3.273 - 2.70], [3.67 - 3.273]])
+    bandit_worst_err = np.array([[0.260 - 0.12], [0.44 - 0.260]])
+    bandit_other_err = np.array([[0.183 - 0.13], [0.25 - 0.183]])
+    dd_recent_err    = np.array([[2.467 - 2.23], [2.93 - 2.467]])
+    dd_middle_err    = np.array([[0.460 - 0.31], [0.68 - 0.460]])
+    dd_early_err     = np.array([[0.047 - 0.01], [0.09 - 0.047]])
+
+    fig, ax = plt.subplots(figsize=(6.0, 3.5))
+
+    # 6 bars on a shared X axis, grouped into two policy clusters
+    labels = [
+        "best\n(labelled)",
+        "worst\n(labelled)",
+        "other\n(unlabelled)",
+        "recent\n(last 3)",
+        "middle\n(iters 4-N-3)",
+        "early\n(first 3)",
+    ]
+    values = [bandit_best, bandit_worst, bandit_other,
+              dd_recent, dd_middle, dd_early]
+    errs = np.hstack([bandit_best_err, bandit_worst_err, bandit_other_err,
+                       dd_recent_err, dd_middle_err, dd_early_err])
+    colors = [C_BANDIT, "#9bbcd1", "#cccccc",
+              C_RECENT, "#9dd2bf", "#e1c4d4"]
+
+    xs = np.arange(len(labels))
+    bars = ax.bar(xs, values, yerr=errs, capsize=2.5,
+                   color=colors, edgecolor="black", linewidth=0.5,
+                   error_kw=dict(elinewidth=0.6, ecolor="black"))
+
+    # value annotations
+    for b, v in zip(bars, values):
+        ax.text(b.get_x() + b.get_width() / 2, v + 0.08,
+                f"{v:.2f}", ha="center", va="bottom",
+                fontsize=6.8, color="black")
+
+    # group separator + group titles, sitting just above the plot area
+    ax.axvline(2.5, color="grey", lw=0.6, ls=":", alpha=0.7, zorder=1)
+    ax.text(1.0, 4.65, "CuraHarness (bandit)",
+            ha="center", va="bottom", fontsize=8.0, color=C_BANDIT,
+            fontweight="bold")
+    ax.text(1.0, 4.42, "bucket by policy label",
+            ha="center", va="bottom", fontsize=6.8, color=C_BANDIT,
+            style="italic")
+    ax.text(4.0, 4.65, "default+direction",
+            ha="center", va="bottom", fontsize=8.0, color="#1f6e9c",
+            fontweight="bold")
+    ax.text(4.0, 4.42, "bucket by recency",
+            ha="center", va="bottom", fontsize=6.8, color="#1f6e9c",
+            style="italic")
+
+    # the headline 14-22x annotation, anchored on the bandit-best bar
+    ax.annotate(
+        "best dirs absorb 14--22x more\nreads/slot than unlabelled refs",
+        xy=(0.4, bandit_best), xytext=(1.05, 3.30),
+        fontsize=6.8, color=C_BANDIT,
+        ha="left", va="top",
+        arrowprops=dict(arrowstyle="-", color=C_BANDIT, lw=0.6, alpha=0.7),
+    )
+
+    # axes
     ax.set_xticks(xs)
-    ax.set_xticklabels(bandit_runs)
-    ax.set_ylabel("Reads per available slot")
-    ax.set_title("Bandit (LongMemEval, claudekimi)", fontsize=9, pad=4)
-    ax.legend(loc="upper right", fontsize=7)
-    ax.set_ylim(0, 4.3)
+    ax.set_xticklabels(labels, fontsize=6.8)
+    ax.set_ylabel("Reads per available reference-iter slot")
+    ax.set_ylim(0, 5.0)
     ax.grid(True, axis="y", ls=":", lw=0.4, color="grey", alpha=0.5)
     ax.set_axisbelow(True)
+    ax.tick_params(axis="x", which="both", length=0)
+    ax.tick_params(axis="y", which="both", length=2.5)
 
-    # Right
-    ax = axes[1]
-    xs = np.arange(len(dd_runs))
-    dd_colors = {
-        "recent (last 3)":  C_RECENT,
-        "middle":           C_MIDDLE,
-        "early (first 3)":  C_EARLY,
-    }
-    for i, (label, vals) in enumerate(dd_data.items()):
-        offset = (i - 1) * width
-        bars = ax.bar(xs + offset, vals, width=width,
-                       color=dd_colors[label], edgecolor="black",
-                       linewidth=0.5, label=label)
-        for b, v in zip(bars, vals):
-            ax.text(b.get_x() + b.get_width() / 2, v + 0.06,
-                    f"{v:.2f}", ha="center", va="bottom",
-                    fontsize=6.5, color="black")
-    ax.set_xticks(xs)
-    ax.set_xticklabels(dd_runs)
-    ax.set_title("Default+direction (no labels)", fontsize=9, pad=4)
-    ax.legend(loc="upper right", fontsize=7)
-    ax.set_ylim(0, 4.3)
-    ax.grid(True, axis="y", ls=":", lw=0.4, color="grey", alpha=0.5)
-    ax.set_axisbelow(True)
-
-    fig.suptitle("Reads per available reference-iter slot", fontsize=10, y=1.02)
     fig.tight_layout()
     fig.savefig("read_concentration.pdf", bbox_inches="tight")
     fig.savefig("read_concentration.svg", bbox_inches="tight")
@@ -279,8 +307,4 @@ def fig_read_concentration():
 if __name__ == "__main__":
     fig_pareto()
     fig_read_concentration()
-    # fig_breakthrough_rate() retained for reference but not referenced in
-    # the current Experiments section -- the warm-up vs late narrative was
-    # dropped because data does not support a "low/medium still useful
-    # after iter 5" claim (medium hits 3.4% post-iter-5).
-    print("Generated: pareto_cost_quality.pdf, read_concentration.pdf")
+    print("Generated: pareto_cost_quality.{pdf,svg}, read_concentration.{pdf,svg}")
