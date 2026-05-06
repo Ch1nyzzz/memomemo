@@ -78,7 +78,7 @@ def fig_optimization_effect():
     # Mean test passrate per cell (default-family / progressive / cura mean
     # across retained runs). Source: docs/experiment_detail.md.
     # SWE row is single docs-only run (mean = the single value).
-    baseline_test    = np.array([0.3315, 0.3308, 0.4983, 0.4967, 0.4580])
+    baseline_test    = np.array([0.3315, 0.3308, 0.4883, 0.4867, 0.4580])
     progressive_test = np.array([0.3545, 0.3738, 0.5050, 0.4992, 0.6200])
     cura_test        = np.array([0.3554, 0.3554, 0.5100, 0.4625, 0.6400])
 
@@ -91,27 +91,33 @@ def fig_optimization_effect():
     width = 0.26
     offsets = np.array([-width, 0.0, +width])
 
+    # Local palette for this figure: muted Tol-light trio, colorblind-safe
+    # and softer than the global vermilion/blue used in the Pareto figure.
+    col_baseline = "#BBBBBB"   # soft cool grey
+    col_prog     = "#EE8866"   # warm coral
+    col_cura     = "#4477AA"   # muted steel blue
+
     fig, ax = plt.subplots(figsize=(6.4, 3.8))
     ax2 = ax.twinx()
 
     # Upper half: mean test passrate
     bars_b = ax.bar(xs + offsets[0], baseline_test, width,
-                    color=C_DEFAULT, edgecolor="black", linewidth=0.5,
+                    color=col_baseline, edgecolor="black", linewidth=0.5,
                     label="Full-context baseline")
     bars_p = ax.bar(xs + offsets[1], progressive_test, width,
-                    color=C_PROGRESSIVE, edgecolor="black", linewidth=0.5,
+                    color=col_prog, edgecolor="black", linewidth=0.5,
                     label="Progressive")
     bars_c = ax.bar(xs + offsets[2], cura_test, width,
-                    color=C_BANDIT, edgecolor="black", linewidth=0.5,
+                    color=col_cura, edgecolor="black", linewidth=0.5,
                     label="CuraHarness")
 
     # Lower half: token consumption (drawn as negative on ax2 so bars go down)
     ax2.bar(xs + offsets[0], -baseline_tok, width,
-            color=C_DEFAULT, edgecolor="black", linewidth=0.5, alpha=0.85)
+            color=col_baseline, edgecolor="black", linewidth=0.5, alpha=0.85)
     ax2.bar(xs + offsets[1], -progressive_tok, width,
-            color=C_PROGRESSIVE, edgecolor="black", linewidth=0.5, alpha=0.85)
+            color=col_prog, edgecolor="black", linewidth=0.5, alpha=0.85)
     ax2.bar(xs + offsets[2], -cura_tok, width,
-            color=C_BANDIT, edgecolor="black", linewidth=0.5, alpha=0.85)
+            color=col_cura, edgecolor="black", linewidth=0.5, alpha=0.85)
 
     # Symmetric limits sharing y=0
     ax.set_ylim(-0.80, 0.80)
