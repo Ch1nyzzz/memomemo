@@ -1,20 +1,21 @@
 \section{Method}
 \label{sec:method}
-This section describes \name, our framework for online context curation in automated harness optimization. \name is built on the observation that prior outer-loop systems either expose the full optimization history monolithically~\cite{lee2026metaharness} or compress it into lossy summaries~\cite{yang2024opro,lee2025feedback,agrawal2025gepa}; neither static exposure rule is optimal: the informativeness of any given prior artifact varies with the proposer's current iteration, recent edits, and observed regressions.
-% the right slice of history depends on the proposer's current state. 
-Instead, \name curates context adaptively along two complementary dimensions: 
-an iteration-level strategy that selects which prior rounds' artifacts to expose, and a file-level strategy that, \todo{within those rounds}, selects which files the proposer actually sees. The two strategies operate jointly: the iteration-level decision constrains the candidate pool over which the file-level strategy operates. 
-
-% Our method centers on two adaptive context-selection policies that
-% control what the proposer sees at each iteration: the
-% progressive policy curates which prior iterations to
-% surface via a budget state machine that escalates only after a
-% Pareto-frontier stall, and the bandit policy curates which
-% workspace files to surface via per-file UCB scoring. Both plug into
-% the same propose--evaluate loop and contrast with the fixed-context
-% default that exposes the full file tree and complete history every
-% iteration. We formalize the setting, describe the shared loop, and then
-% present each policy.
+This section describes \name, our framework for online context curation in
+automated harness optimization. \name is built on the observation that prior
+outer-loop systems either expose the full optimization history
+monolithically~\cite{lee2026metaharness} or compress it into lossy
+summaries~\cite{yang2024opro,lee2025feedback,agrawal2025gepa}. Neither static
+exposure rule is optimal because the informativeness of a prior artifact
+depends on the proposer's current iteration, recent edits, and observed
+regressions. Instead, \name curates context through two composable strategies
+that act at different granularities. The iteration-level strategy controls the
+historical scope by selecting which prior rounds' artifacts to expose. The
+file-level strategy can then reallocate read effort within the exposed
+workspace by prioritizing files whose inspection has previously correlated
+with productive edits. The file-level strategy is therefore not a standalone
+replacement for iteration-level curation: by itself it does not decide which
+prior iterations, traces, or candidate histories should enter the evidence
+workspace.
 
 \subsection{Problem Statement}
 \label{sec:setting}
@@ -32,59 +33,21 @@ H_{t+1} \sim P(\cdot \mid C_t),
 \label{eq:search_loop}
 \end{equation}
 where $C_t = \mathcal{C}(D_t, s_t)$ is produced by a context curation policy $\mathcal{C}$ that selects which subset of $D_t$ to surface, and $s_t$ denotes the proposer's auxiliary state at iteration $t$ (e.g., current frontier, recent regressions).
-After evaluation, $D_{t+1} = D_t \cup \{(H_{t+1}, E_{t+1})\}$. This formulation generalizes prior work: Lee et al.~\cite{lee2026metaharness} corresponds to direct filesystem access ($C_t = D_t$), while  Agrawal et al.~\cite{agrawal2025gepa} and Yang et al.~\cite{yang2024opro} use static compression ($C_t = \phi(D_t)$ for some fixed $\phi$).
-
-
-
-% Let $\mathcal{H}$ denote the space of harnesses---source code
-% artifacts (memory scaffolds, agent control loops) that, given a benchmark
-% task~$x$, produce a response scored by an evaluation function
-% $\operatorname{eval}(h,x)\!\in\![0,1]$. Given a training set
-% $\{x_1,\ldots,x_n\}$, we measure two objectives:
-% \begin{align}
-%   p(h) &= \tfrac{1}{n}\textstyle\sum_{i=1}^{n}
-%            \mathbf{1}[\operatorname{eval}(h,x_i)\!\ge\!\tau],
-%            &\text{(passrate)} \label{eq:passrate} \\
-%   s(h) &= \tfrac{1}{n}\textstyle\sum_{i=1}^{n}
-%            \operatorname{eval}(h,x_i),
-%            &\text{(average score)} \label{eq:avgscore}
-% \end{align}
-% where $\tau\!=\!0.8$ is a token-F1 pass threshold (matching the
-% \texttt{PASS\_F1\_THRESHOLD} used by all benchmarks). The optimizer
-% maintains a Pareto frontier~$\mathcal{F}$ over $(p,s)$ with passrate
-% priority: a candidate that wins on passrate by more than a quality gap
-% $\delta\!=\!0.125$ dominates regardless of average score, ensuring
-% small-but-noisy $s$ improvements do not crowd out cheaper points with
-% clearly higher~$p$.
-
-% A proposer~$\pi$ is a coding agent (Claude~Code, Codex, or Kimi)
-% that, given a context bundle $C_k = (\Sigma_k, R_k, D_k)$ at
-% iteration~$k$, edits the harness source and emits a candidate
-% $h_k = \pi(C_k)$. The bundle comprises cumulative summaries~$\Sigma_k$,
-% raw reference iteration bundles~$R_k$ (a subset of prior iterations
-% surfaced verbatim), and file-level hints~$D_k$ (which workspace files
-% to attend to). The central question is: how should we construct~$C_k$
-% so that the proposer efficiently expands~$\mathcal{F}$?
-% Prior work either exposes the full file tree every
-% iteration~\cite{lee2026metaharness} or compresses history into fixed
-% summaries~\cite{zhang2025ace,sharma2025openevolve}. We show that
-% adaptive, iteration-aware curation of $R_k$ and $D_k$ outperforms
-% both extremes.
+After evaluation, $D_{t+1} = D_t \cup \{(H_{t+1}, E_{t+1})\}$. This formulation generalizes prior work: Lee et al.~\cite{lee2026metaharness} corresponds to direct filesystem access ($C_t = D_t$), while Agrawal et al.~\cite{agrawal2025gepa} and Yang et al.~\cite{yang2024opro} use static compression ($C_t = \phi(D_t)$ for some fixed $\phi$).
 
 \subsection{\name}
-We design \name from the theory of decision making. Specifically, it is realized as a closed-loop controller operates in a sequential decision process. At each iteration $t$, \name (i) maintains a state $s_t$ that aggregates the past outcoms; (ii) computes an score $Q_t$ that estimates the value of each candidate iteration and file in $D_t$; (iii) applies a selection rule $\pi$ that turns $Q_t$ into the curated context $C_t$ of Eq.~\ref{eq:search_loop}; and (iv) once the proposer's evaluation $E_{t+1}$ arrives, updates $s_t$ via a reward signal $\rho$ before the next iteration begins. The remainder of this section details each component — State, Score, Selection rule, and State transition — in turn. Section~\ref{sec:policies} then instantiates the framework into two concrete curation policies that differ in how the four steps above are realized.
+\name is a closed-loop controller for sequential context selection. At each iteration $t$, it (i) maintains a state $s_t$ that summarizes past outcomes; (ii) computes scores $Q_t$ for candidate historical artifacts and files in $D_t$; (iii) applies a selection rule $\pi$ that maps these scores to the curated context $C_t$ in Eq.~\ref{eq:search_loop}; and (iv) after receiving the evaluation $E_{t+1}$, updates its state using a reward signal $\rho$ before the next proposal. The remainder of this section defines the shared state, scoring, selection, and update interface, and the following subsections instantiate it as the Progressive and bandit policies.
 
-\textbf{State.} The controller's state has two components matching the two dimensions of curation, $s_t = (U_t, B_t)$. $U_t$ is an \emph{iteration-level summary} that tracks how recent proposals have performed against the Pareto frontier --- for instance, whether the last iteration was an improvement, or how many iterations have passed without one. $B_t$ holds \emph{per-file usage statistics}: for each file in the workspace, how often it has been read in past iterations and the cumulative reward attributed to those reads. 
-% The progressive policy uses only $U_t$; the bandit policy uses both.                  
+\textbf{State.} The controller's state has two components matching the two curation granularities, $s_t = (U_t, B_t)$. $U_t$ is an \emph{iteration-level summary} that tracks how recent proposals have performed against the Pareto frontier --- for instance, whether the last iteration was an improvement, or how many iterations have passed without one. $B_t$ holds \emph{per-file usage statistics}: for each file in the workspace, how often it has been read in past iterations and the cumulative reward attributed to those reads.
 
-\textbf{Score.} Given $(D_t, s_t)$, \name estimate how much of surfacing artifacts would help the next proposal--against a \emph{cost} term that balance the budget the candidate would consume.
+\textbf{Score.} Given $(D_t, s_t)$, \name estimates the expected value of surfacing each artifact for the next proposal, balanced against the inspection cost that the artifact would impose.
 
-\textbf{Selection.} The selection rule determines how to select files that are surface to the outer agent. It considers \emph{budget tier} as a key factor.
+\textbf{Selection.} The selection rule converts these scores into an evidence workspace for the proposer. Depending on the instantiated strategy, this workspace may include labelled reference iterations, trace summaries, file-level hints, or a combination of these signals under a budget tier.
 
 \textbf{Update.}  Once the evaluator returns its evaluation $E_{t+1}$, \name computes a scalar reward $\rho_{t+1}$ from $E_{t+1}$ that summarizes whether the new harness improved the search, updates the Pareto frontier, and refreshes $s_t \to s_{t+1}$. The refreshed state shapes the next round's scoring and selection. 
 
-We instantiate the framework into two complementary policies operating at different granularities: an
-\emph{iteration-level} policy that decides \emph{which prior rounds} to surface, and a \emph{file-level} policy that decides \emph{which files within those rounds} the proposer sees.
+We instantiate the framework as two concrete policies operating at different granularities: an
+\emph{iteration-level} policy that decides \emph{which prior rounds} to surface, and a \emph{file-level} policy that decides \emph{which files inside the exposed workspace} should receive priority.
 
 
 \subsection{Iteration-level curation.}
@@ -117,95 +80,17 @@ The tier follows a \emph{progressive} schedule tied to the reward signal $\rho$ 
 gradually widening the proposer's view of the experience pool.
 When an improvement \emph{is} observed ($\rho_{t+1} > 0$), the tier resets to \texttt{low}, since the successful direction has been found and a lean context suffices to refine it. This schedule embodies a simple explore--exploit tradeoff: the controller starts conservative, broadens exposure only when progress stalls, and snaps back once a productive edit is discovered.
 
-% \subsection{The Propose--Evaluate Loop}
-% \label{sec:loop}
-
-% All three policies share the loop shown in
-% Figure~\ref{fig:system_overview}. At iteration~$k$:
-% (1)~the policy selects a budget
-% $b_k\!\in\!\{\texttt{low},\texttt{medium},\texttt{high}\}$, reference
-% iterations~$R_k$, trace scope, and (for the bandit) file-level
-% hints~$D_k$; (2)~the harness assembles workspace~$W_k$ (cumulative
-% summaries, the selected reference bundles with explicit role
-% labels marking best iterations as imitation targets and worst
-% iterations as anti-patterns, an editable source snapshot, and the file
-% hints) and builds the prompt; (3)~the proposer~$\pi$ runs in a sandbox
-% restricted to~$W_k$, edits the source snapshot, and writes one
-% candidate specification (\texttt{pending\_eval.json}); (4)~the harness
-% loads the candidate, evaluates it on the training split,
-% updates~$\mathcal{F}$, and the policy writes back state. Sandboxing is
-% implemented via Docker with file-access auditing---an implementation
-% detail that prevents proposers from reading scoring helpers or raw
-% benchmark data, but is independent of the policy contributions below.
-
-% The three budgets control two dimensions of context:
-
-% \begin{table}[h]
-% \centering
-% \small
-% \begin{tabular}{@{}lccc@{}}
-% \toprule
-%  & \texttt{low} & \texttt{medium} & \texttt{high} \\
-% \midrule
-% Reference iters & best\,1 + worst & best\,3 + worst & full history \\
-% Trace scope & last\,1 & last\,3 & all \\
-% \bottomrule
-% \end{tabular}
-% \vspace{2pt}
-% \caption{Budget tiers and the context they expose to the proposer.
-% ``Trace scope'' controls how many recent per-task evaluation traces are
-% included in each reference bundle.}
-% \label{tab:budgets}
-% \end{table}
-
 \begin{figure}[t]
   \centering
   \includegraphics[width=\linewidth]{figures/system_overview.pdf}
   \vspace{-4pt}
   \caption{System overview. The setup phase evaluates baseline harnesses
   to seed the Pareto frontier. Each optimization iteration selects a
-  context budget (via one of three policies), assembles a sandboxed
-  workspace, runs the proposer, evaluates the candidate, and writes back
-  policy state. The loop repeats for $N$ iterations.}
+  context budget, assembles a sandboxed workspace, runs the proposer,
+  evaluates the candidate, and writes back curation state. The loop
+  repeats for $N$ iterations.}
   \label{fig:system_overview}
 \end{figure}
-
-% \subsection{Progressive Policy}
-% \label{sec:progressive}
-
-% The progressive policy implements a budget state machine
-% (Figure~\ref{fig:progressive_fsm}) that starts cheap and escalates only
-% when the optimization stalls. The key insight is that most breakthroughs
-% occur when the proposer focuses on a narrow context rather than browsing
-% the full history.
-
-% \paragraph{State machine.}
-% Let $b_k$ denote the budget at iteration~$k$ and let
-% $\mathrm{improved}_k$ be the indicator that iteration~$k$ produced a new
-% entry on the Pareto frontier~$\mathcal{F}$. The transition rule is:
-% \begin{equation}
-%   b_{k+1} =
-%   \begin{cases}
-%     \texttt{low}    & \text{if } k < k_0 \text{ or } \mathrm{improved}_k, \\
-%     \texttt{medium} & \text{if } b_k = \texttt{low}
-%                       \text{ and } \neg\,\mathrm{improved}_k, \\
-%     \texttt{high}   & \text{if } b_k \in \{\texttt{medium},\texttt{high}\}
-%                       \text{ and } \neg\,\mathrm{improved}_k,
-%   \end{cases}
-%   \label{eq:progressive}
-% \end{equation}
-% where $k_0\!=\!5$ is a warm-up period during which the budget is forced
-% to \texttt{low}. The critical property is that any improvement
-% resets the budget to~\texttt{low}, so the system spends most iterations
-% at cheap, narrow context and only escalates to \texttt{high} after
-% consecutive stalls.
-
-% \paragraph{Prompt construction.}
-% At \texttt{low} and \texttt{medium} budgets the prompt explicitly labels
-% the top-$k$ iterations by passrate (with $k\!=\!1$ for \texttt{low} and
-% $k\!=\!3$ for \texttt{medium}) and the worst iteration. At \texttt{high}
-% budget the proposer receives the full history and identifies roles from
-% summaries.
 
 \begin{figure}[t]
   \centering
@@ -218,9 +103,8 @@ When an improvement \emph{is} observed ($\rho_{t+1} > 0$), the tier resets to \t
 \end{figure}
 
 \subsection{File-level Curation.}
-% \subsection{Bandit Policy}
 \label{sec:bandit}
-The file-level curation method is design from bandit policy. We treats every readable file in the workspace as an arm of a multi-armed bandit (Figure~\ref{fig:bandit_flow}) and uses per-file utility estimates to construct a hot workspace that concentrates the proposer's attention on files whose past reads correlated with positive outcomes.
+The file-level strategy is implemented as a bandit policy. It treats every readable file in the workspace as an arm of a multi-armed bandit (Figure~\ref{fig:bandit_flow}) and uses per-file utility estimates to construct a hot workspace that concentrates the proposer's attention on files whose past reads correlated with positive outcomes. This policy reallocates a bounded read budget rather than replacing historical-scope control: it is most natural after an evidence workspace has already been constructed, although the same scoring rule can be ablated under different reference-history budgets.
 
 \paragraph{Reward signal.}
 At the end of iteration~$k$, the harness computes a rolling $z$-score
@@ -299,25 +183,3 @@ references are provided.
   estimates.}
   \label{fig:bandit_flow}
 \end{figure}
-
-% \subsection{Default Policy}
-% \label{sec:default}
-
-% The default policy is the fixed-context baseline that all prior
-% harness-optimization systems implicitly adopt: every iteration uses
-% \texttt{high} budget with no role labels, so the proposer sees the
-% full file tree and complete history. We retain it as a controlled
-% baseline to isolate the contribution of adaptive iteration- and
-% file-selection.
-
-% \subsection{Benchmark Integration}
-% \label{sec:benchmarks}
-
-% Both policies are benchmark-agnostic: the shared loop and policy logic
-% are identical across tasks. Only two components are specialized per
-% benchmark: the evaluation function $\operatorname{eval}(\cdot)$ and the
-% editable source files in the workspace specification. We evaluate on
-% LoCoMo (conversational-memory QA)~\cite{maharana2024locomo},
-% LongMemEval (long-term memory)~\cite{wu2024longmemeval}, and SWE-bench
-% Verified (software engineering)~\cite{jimenez2024swebench}, spanning
-% both memory-retrieval and coding-agent harnesses.

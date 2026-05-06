@@ -1,20 +1,24 @@
 \section{Limitations}
 \label{sec:limits}
 
-\todo{Limitations: defer writeup until experiment coverage is final.
-Notes for the eventual draft:
-(a) per-cell sample size is small ($n\!=\!2\!-\!3$ retained runs),
-no statistical-significance claims on individual cells;
-(b) iter-axis ablation (Random@$3$, Recency@$3$) currently anchored
-on LoCoMo / codex54 only; LongMemEval / codex54 train-complete but
-test eval pending; SWE-bench mini scheduled, not yet retained;
-(c) mechanism analysis is claudekimi-only because the codex54
-proposer's tool calls are bucketed under a single \texttt{Shell} type
-without per-Read targets;
-(d) two LoCoMo headline cells (claudekimi progressive, codex54
-bandit) are docs-only; per-iteration artifacts are no longer on disk
-and the corresponding read-decomposition cells are NA;
-(e) SWE-bench mini extensions of Q2 cost-direction reversal and Q3
-mechanism transfer analysis are held back until additional retained
-runs land (cross-references in Q2 and Q3 \texttt{\textbackslash todo}
-markers).}
+Our results should be read as evidence for context curation as a design
+principle, not as a universal dominance claim for any single policy. The
+number of retained runs per cell is small, so we avoid significance claims
+on individual cells and report run means, standard deviations, and
+best-by-test operating points instead. The file-level strategy also shows
+benchmark- and proposer-dependent trade-offs: it often produces lower-cost
+operating points, but it can sacrifice passrate when the uncurated file pool
+already contains strong signal or when guidance metadata is added on top of a
+large exposed history.
+
+The ablations are necessarily narrower than the main evaluation. The
+Random@$3$ and Recency@$3$ iteration-selection ablations are anchored on the
+LoCoMo / codex54 setting, while the force-budget analyses focus on retained
+claudekimi runs. Likewise, the read-target mechanism analysis is most detailed
+for claudekimi because its tool traces expose per-file read targets; codex54
+logs bucket more activity under a single shell interface, limiting comparable
+file-level attribution. Finally, \name is evaluated on three agent-harness
+families, but all experiments use a fixed outer-loop length and a fixed set of
+proposer backbones. Larger run budgets, additional proposers, and broader
+task families may shift the cost--quality frontier and should be tested before
+using the observed trade-offs as deployment defaults.

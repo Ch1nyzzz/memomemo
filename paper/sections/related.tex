@@ -2,7 +2,7 @@
 \label{sec:related}
 
 \paragraph{Automated harness and prompt optimization.}
-A growing body of work leverages LLMs to optimize their own reasoning or
+Several lines of work use LLMs to optimize their own reasoning or
 action scaffolds.  At the prompt level, OPRO~\cite{yang2024opro} frames
 prompt engineering as black-box optimization with LLM-generated candidates,
 and EvoPrompt~\cite{guo2024evoprompt} couples evolutionary operators with
@@ -20,9 +20,10 @@ the agent's \emph{context}---system prompts and memory
 playbooks---through generation, reflection, and curation stages rather
 than modifying harness code.  All of these systems leave the proposer's
 \emph{attention} unmanaged: the proposer either sees a fixed context or
-the entire workspace.  Our work introduces adaptive context-selection
-policies that curate \emph{which files} the proposer attends to at each
-iteration, treating attention as a first-class optimization lever.
+the entire workspace.  Our work introduces adaptive context-curation
+strategies that decide which prior iterations and which files should be
+made salient at each proposal step, treating proposer attention as a
+first-class optimization lever.
 
 \paragraph{Evolutionary code search.}
 LLM-driven evolutionary algorithms demonstrate that language models can
@@ -57,9 +58,9 @@ design decisions within iterative generative
 optimization---initialization, credit horizon, and experience
 batching---finding that these choices are task-dependent and rarely made
 explicit.  Our progressive and bandit policies operationalize both
-insights: they manage \emph{which source files} the proposer sees as a
-first-class loop design decision, starting narrow and escalating only
-when justified by stall detection.
+insights at two granularities: the iteration-level strategy manages the
+historical scope of the evidence workspace, while the file-level bandit
+prioritizes files inside that workspace using delayed utility estimates.
 
 \paragraph{LLM agents as optimization targets and technical foundations.}
 Modern LLM agents---MemGPT~\cite{packer2023memgpt} with virtual memory

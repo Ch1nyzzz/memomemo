@@ -1,21 +1,21 @@
 \section{Experiments}
 \label{sec:experiments}
 
-This section evaluates two claims that follow directly from \name's
-two-axis design: (i)~iteration-axis curation alone lifts test
-passrate over the uncurated full-context baseline, and (ii)~adding
-file-axis curation on top reduces per-propose token cost
-substantially, with a cell-conditional test trade-off that expands
-the cost-quality Pareto frontier rather than dominating it. We
-then trace both effects to a single mechanism---budget-conditioned
-read targeting under fixed inspection effort---and close with an
-ablation that isolates the design choice carrying each gain.
+We evaluate \name by separating the two context-curation strategies it
+introduces. The iteration-level strategy bounds and labels the history
+seen by the proposer, replacing unstructured full-history browsing with
+directed historical attention. The file-level strategy can be composed
+with it to reallocate the proposer's bounded inspection budget toward
+files with observed utility. These strategies are not independent
+additive modules, nor are both required in every setting. They are
+alternative and composable ways to route the same fixed-inspection
+bottleneck.
 
 \subsection{Setup}
 \label{sec:setup}
 \textbf{Benchmarks.}
 We evaluate \name on three benchmarks chosen to span the two
-failure modes our policies address: \emph{redundant iteration
+failure modes our strategies address: \emph{redundant iteration
 history} (long propose--evaluate traces with stale or failed
 attempts) and \emph{redundant file context} (large workspaces with
 many irrelevant files).
@@ -25,18 +25,20 @@ many irrelevant files).
     is a conversational memory system. The harness has many
     specialised components that benefit from many refinement
     rounds, making it our main testbed for joint iteration--file
-    curation. We use a fixed 80/20 train/test split.
+    curation. We optimise on 80 training examples and report held-out
+    test results on the full 1,449-example split.
     \item \textbf{LongMemEval}~\cite{wu2024longmemeval} is a
     long-term memory benchmark whose inner harness is a
     memory-augmented assistant tested on retrieval, temporal
-    reasoning, and consolidation across long histories. We use a
-    100/20 train/test split.
+    reasoning, and consolidation across long histories. We optimise on
+    100 training examples and report held-out test results on the
+    400-example test split.
     \item \textbf{SWE-bench Verified}~\cite{openai2024swebenchverified}
     is a human-curated subset of 500 GitHub issues from 12 Python
     repositories. We optimise on the \texttt{trainfirst30} pool
-    and re-evaluate on the held-out full 500-issue split. SWE-bench
-    Verified verifies that curation gains transfer to multi-file
-    coding-agent harnesses.
+    and re-evaluate selected candidates on the full 500-issue verified
+    set. SWE-bench Verified tests whether curation gains transfer to
+    multi-file coding-agent harnesses.
 \end{itemize}
 
 \textbf{Inner-harness solvers.}
@@ -47,12 +49,11 @@ Mini-SWE agent driven by DeepSeek~v4 Flash; this isolates
 harness-curation effects from inner-solver variance.
 
 \textbf{Proposer families.}
-We instantiate the meta-agent on top of two coding-agent
-scaffolds: \textbf{Codex}~\todo{cite Codex CLI} with GPT-5.4 as
-the backbone, and \textbf{Claude~Code}~\todo{cite Claude Code} with
-Kimi~K2.6 as the backbone. We refer to these as \emph{codex54} and
-\emph{claudekimi}. Both run on the memory benchmarks; SWE-bench is
-run with claudekimi only.
+We instantiate the meta-agent on top of two coding-agent scaffolds:
+a Codex CLI proposer with GPT-5.4 as the backbone, and a Claude
+Code-compatible proposer with Kimi~K2.6 as the backbone. We refer to
+these as \emph{codex54} and \emph{claudekimi}. Both run on the memory
+benchmarks; SWE-bench is run with claudekimi only.
 
 \textbf{Baseline.}
 The single end-to-end baseline is \textbf{Full-context}, the
@@ -73,32 +74,33 @@ statistics: \emph{test mean$\pm$std} aggregates all retained runs,
 and \emph{best test} reports the highest held-out passrate of any
 retained run. Per-propose token cost columns are taken from the
 single best-by-test run in each cell, since cost is reported on the
-run we are actually proposing as the cell's representative result.
+representative run for that cell.
 Token cost is reported in millions of tokens per propose
 (\texttt{total/prop}, including cache reads) summed over input,
 output, and cache-read tokens. Figures use the same single
 best-by-test run per cell to avoid mixing replicates of the same
 experiment into one curve.
 
-\subsection{Iteration-axis curation lifts test passrate}
+\subsection{Iteration-axis curation improves search quality}
 \label{sec:iter_axis}
 
-We first ask whether the \emph{iteration-axis} state machine alone
-is enough to beat the uncurated full-context baseline on test
-passrate. The \emph{Progressive} policy of
+We first isolate the \emph{iteration-axis} strategy's contribution
+before any file-level utility model is in play. The \emph{Progressive} policy of
 Section~\ref{ssec:iteration} surfaces best/worst-tagged ref-iter
 directories under a \texttt{low}$\,\to\,$\texttt{medium}$\,\to\,$\texttt{high}
 budget state machine but does \emph{not} curate which files within
 those directories the proposer sees. Comparing Progressive against
 the default-family baseline isolates the iter-axis contribution from
-the file-axis contribution.
+the file-axis contribution: the only new signal is which historical
+iterations are exposed and how they are labelled.
 
-Table~\ref{tab:main} reports the cost--quality picture across all
-five (benchmark, proposer) cells, including the held-out SWE-bench
-verification. Rows are stacked by curation depth: \emph{default},
+Table~\ref{tab:main} reports the cost--quality trade-off across all
+five (benchmark, proposer) cells, including the SWE-bench full
+verified-set evaluation. Rows are stacked by curation depth:
+\emph{default},
 \emph{Progressive} (iter axis only), and \emph{\name} (iter+file,
 discussed in Section~\ref{sec:file_axis}). Figure~\ref{fig:pareto}
-visualises the four memory cells as a cost-vs-quality scatter.
+plots the four memory cells in cost--quality space.
 
 \begin{table}[t]
 \centering
@@ -109,11 +111,10 @@ averages all retained runs in the cell; \emph{best test} is the
 highest held-out passrate of any retained run; per-propose cost
 columns are reported on that best-by-test run. The $\Delta$ column
 reports total/propose savings relative to the cell's default row.
-SWE-bench numbers are train-pool train passrate and held-out
-full-500 verified passrate; $\Delta$ verified is the gain on the
-held-out split.}
+SWE-bench numbers are train-pool train passrate and full-500 verified
+passrate; $\Delta$ verified is the gain on the full verified set.}
 \label{tab:main}
-\begin{tabular}{@{}llrrrrr@{}}
+\begin{tabular}{@{}llrrrr@{}}
 \toprule
 Benchmark & Policy & test mean$\pm$std & best test & total/prop & $\Delta$ \\
 \midrule
@@ -153,14 +154,14 @@ Benchmark & Policy & test mean$\pm$std & best test & total/prop & $\Delta$ \\
   Each cell shows the single best-by-test retained run for default
   ($\blacksquare$), Progressive ($\bullet$, iter axis only), and
   \name ($\blacktriangle$, iter+file). Upper-left is the favourable
-  region (less cost, higher score). Progressive sits at or above
-  default on test in all four cells; \name strictly dominates
+  region (less cost, higher score). Progressive improves mean test
+  over default in all four memory cells; \name strictly dominates
   default in three cells and occupies a new cost-frontier point
   ($-26\%$ cost, $-3.4$\,pp test) on LongMemEval / codex54.}
   \label{fig:pareto}
 \end{figure}
 
-\textbf{Progressive lifts mean test in every cell.}
+\textbf{Progressive improves mean held-out performance.}
 Progressive's mean test passrate exceeds default-family in all four
 memory cells: $+2.3$\,pp on LoCoMo claudekimi
 ($0.331 \!\to\! 0.355$), $+4.3$\,pp on LoCoMo codex54
@@ -169,95 +170,90 @@ memory cells: $+2.3$\,pp on LoCoMo claudekimi
 ($0.497 \!\to\! 0.499$). The two LoCoMo gains sit at $1.5\sigma$
 and $3.2\sigma$ above the default-family std and are clear of run
 noise; the two LongMemEval gains lie within run std and should be
-read as directional. Curating which prior iterations the proposer
-attends to, with no file-side curation, is sufficient to lift mean
-test on all four memory cells.
+read as directional. In these cells, curating which prior iterations
+the proposer attends to is enough to lift mean test even without a
+file-side utility model.
 
-\textbf{The same lift transfers to a coding-agent harness on
-SWE-bench.}
+\textbf{The effect extends to a coding-agent harness.}
 On SWE-bench Verified, Progressive's trainfirst30 train passrate
 ($0.533$) is only $3.3$\,pp above default ($0.500$), but the
-held-out full-500 verified passrate jumps from $0.458$ to $0.620$
+full-500 verified passrate jumps from $0.458$ to $0.620$
 ($+16.2$\,pp). The trainfirst30 pool compresses all policies into
 a narrow $0.50$--$0.53$ band, which masks the mechanism difference
 between full-context and curated context; the difference surfaces
-on the larger held-out distribution. The iter-axis mechanism is
+on the larger verified set. The iter-axis mechanism is
 not memory-benchmark-specific.
 
-\textbf{Cost is also reduced, but variably.}
+\textbf{Cost is a secondary, variable effect of iteration curation.}
 Progressive's cost saving ranges from $-46\%$ on LoCoMo claudekimi
-down to $-9\%$ on LongMemEval codex54 (and a $+17\%$ cost increase
-on SWE-bench because the longer initial prompt is paid back over
-fewer tool turns on coding-agent harnesses). The saving is
-benchmark- and proposer-conditional: the iter-axis state machine
-substitutes for proposer exploration mainly when the candidate
-codebase is small enough that direct prescription replaces a
-localisation scan. On larger codebases (LongMemEval, SWE-bench)
-the substitution weakens, and cost savings come not from the iter
-axis but from the file axis layered on top---the subject of
-Section~\ref{sec:file_axis}.
+down to $-9\%$ on LongMemEval codex54, and rises to a $+17\%$
+\emph{increase} on SWE-bench. Iteration curation is therefore not
+primarily a token-reduction mechanism: it saves cost when labelled
+history substitutes for proposer-side localisation, but the proposer
+can also spend the narrower historical context on additional source
+inspection or tool use.
 
-\subsection{File-axis curation cuts cost via Pareto frontier expansion}
+\subsection{File-axis curation improves the cost--quality operating point}
 \label{sec:file_axis}
 
 We now layer the \emph{file-axis} bandit (Section~\ref{sec:bandit})
 on top of Progressive's iter-axis state machine, yielding
 \name. The bandit assigns delayed credit to files read by the
 proposer and concentrates future attention on a UCB-scored hot pool;
-this caps how many workspace files the proposer is asked to consider
-at any one iteration. Comparing \name against Progressive
-isolates the file-axis contribution.
+this changes where the proposer spends its fixed read budget rather
+than merely shrinking the workspace. Comparing \name against default
+and Progressive therefore tests whether a file-utility prior improves
+the cost--quality operating point under bounded historical exposure.
 
-\textbf{File-axis curation is a uniform cost saver.}
+\textbf{File-axis curation gives a more stable cost-axis lever under
+bounded historical exposure.}
 Across all four memory cells \name reduces per-propose tokens by
-$-23\%$ to $-37\%$ relative to default---a tighter and more
-uniform band than Progressive's $-9\%$ to $-46\%$ swing
-(Table~\ref{tab:main}). \name is the cheapest of the three
-policies in three of the four memory cells. The cost saving
-mechanism is independent of the iter-axis state machine: by
-capping the workspace pool the file-axis curtails the variable
-exploration cost regardless of how the iter axis is set, and the
-saving therefore holds even on cells where Progressive's iter-axis
-saving collapses (LongMemEval claudekimi: Progressive $-9\%$,
-\name $-31\%$).
+$-23\%$ to $-37\%$ relative to default (Table~\ref{tab:main}), and is
+the cheapest of the three policies in three of the four cells. This
+pattern is more stable than Progressive's wider cost range
+($-46\%$ to $-9\%$ on memory, with an increase on SWE-bench), but it
+is conditional on the iteration-level scope. The file-axis prior pays
+off when the iteration strategy has already bounded the historical
+channel. If the full iteration history remains open, the bandit can add
+policy metadata and hot-file guidance on top of an already large
+context; in that setting it may redirect attention without reducing
+total token volume.
 
-\textbf{The cost saving comes with a cell-conditional test
-trade-off.}
+\textbf{The lower-cost operating point comes with a cell-conditional
+test trade-off.}
 On three of the four memory cells \name strictly dominates default
 on the cost-quality plane: $+2.4$\,pp at $-23\%$ cost on LoCoMo
 claudekimi, $+2.5$\,pp at $-37\%$ on LoCoMo codex54, and
 $+1.2$\,pp at $-31\%$ on LongMemEval claudekimi. The fourth cell,
 LongMemEval codex54, scores $0.4625$ vs default $0.4967$
-($-3.4$\,pp test) at $-26\%$ token cost. Before \name, a user
-paying default's $2.93$M total/propose had no cheaper operating
-point with non-trivial test passrate on this cell; \name introduces
-a $2.18$M operating point within $3$--$4$\,pp of default. The cell
-sits on a Pareto frontier under \name by frontier expansion rather
-than dominance, which is the value of file-axis curation in
-token-constrained regimes. We do not claim universal dominance;
-we claim that the file axis converts iter-axis test gains into
-uniform cost savings, with at most a small test sacrifice on
-benchmark--proposer pairs where the uncurated file pool already
-carried strong signal.
+($-3.4$\,pp test) at $-26\%$ token cost. \name therefore introduces a
+$2.18$M operating point within $3$--$4$\,pp of default, whereas the
+default-family cell operates at $2.93$M total/propose. This is Pareto
+frontier expansion rather than universal dominance: the file axis
+creates lower-cost operating points at comparable quality in most
+cells, with a measurable quality trade-off when the uncurated file pool
+already carries strong signal.
 
-\textbf{File-axis curation also captures the SWE-bench gain.}
-On SWE-bench Verified, \name lifts the held-out full-500 split
-from $0.458$ to $0.640$ ($+18.2$\,pp), the largest single gain in
-our experiments. The trainfirst30 train passrate is identical to
-Progressive's ($0.533$); the additional $+2.0$\,pp on the held-out
-split comes entirely from file-axis curation on top.
+\textbf{File-axis curation further improves SWE-bench.}
+On SWE-bench Verified, \name lifts the full-500 verified set
+from $0.458$ to $0.640$ ($+18.2$\,pp), the largest gain we observe.
+The trainfirst30 train passrate is identical to Progressive's
+($0.533$); the additional $+2.0$\,pp on the full verified set is
+attributable to the file-axis strategy, holding the train-pool
+ceiling fixed.
 
 \subsection{Mechanism: same inspection effort, different targets}
 \label{sec:mechanism}
 
 Sections~\ref{sec:iter_axis}--\ref{sec:file_axis} show that \name
-matches or beats default on test in most cells while spending
-fewer total tokens per propose. The natural follow-up is whether
-the proposer is simply doing less work---reading fewer files, making
-fewer tool calls---under \name. The answer is no: per-iteration
-inspection effort is roughly budget-invariant. What changes is the
-distribution of \emph{where} the proposer reads. The mechanism has
-three components, summarised in Table~\ref{tab:mechanism}.
+matches or beats default on test in most cells while spending fewer
+total tokens per propose. The gain does not come from reduced proposer
+work. Per-iteration inspection effort is roughly budget-invariant; what
+changes is the distribution of \emph{where} the proposer reads. This
+is the bottleneck through which both axes act: iteration labels route
+reads across prior attempts, and the file bandit routes reads across
+files available inside that historical scope. Table~\ref{tab:mechanism}
+summarises the three components of the mechanism.
 
 \begin{table}[t]
 \centering
@@ -410,8 +406,8 @@ Benchmark & Policy & Total ref Reads & \% top-$1$ & \% top-$3$ & \% recent-$3$ &
 \end{tabular}
 \end{table}
 
-The headline number is that progressive's reads land on the current
-top-$1$ iter at substantially higher share than default's: $+25.6$\,pp
+Progressive's reads land on the current top-$1$ iter at substantially
+higher share than default's: $+25.6$\,pp
 on LongMemEval ($77.7\%$ vs $52.1\%$) and $+22.7$\,pp on LoCoMo
 ($53.8\%$ vs $31.1\%$). This is the same labelled-prior effect that
 the $14$--$22\times$ reads/slot statistic quantifies for bandit, only
@@ -432,30 +428,32 @@ channel.
 \textbf{Mechanism summary.}
 Per-iteration read volume is roughly budget-invariant ($\sim$$20$
 unique reads, $\sim$$1.3$ reread rate, $\sim$$57$ lines per
-ref-read), so escalating budget does not buy additional inspection
-effort. What it buys is a different target distribution. Within
-that distribution, \name's \texttt{best\_iterations} pointer takes
-a $14$--$22\times$ share of the proposer's attention, and the same
-labelled-prior effect appears in Progressive under a top-$k$ bucket
+ref-read); escalating the budget does not buy more inspection
+effort, only a different target distribution. Within that
+distribution, \name's \texttt{best\_iterations} pointer captures a
+$14$--$22\times$ share of the proposer's attention, and the same
+labelled-prior effect surfaces in Progressive under a top-$k$ bucket
 scheme (top-$1$ share $+22$--$26$\,pp over default,
-Table~\ref{tab:top1_attention}); the same fixed inspection budget
-that default-family spends on a recency-biased tail is redirected by
-\name onto historically productive iteration-and-file targets. The
-policy's labels, not the budget tier itself, drive the proposer's
-bounded attention.
-This redirection is the single mechanism behind both the
-iter-axis test gain of Section~\ref{sec:iter_axis} and the
-file-axis cost saving of Section~\ref{sec:file_axis}.
+Table~\ref{tab:top1_attention}). \name redirects the same fixed
+inspection budget that default-family spends on a recency-biased tail
+toward historically productive iteration and file targets. The
+policy's labels, not the budget tier, drive the proposer's bounded
+attention.
+This redirection explains why the two axes should be read as
+composable attention-routing strategies rather than independent
+contributions. The iteration axis routes attention across prior
+attempts, whereas the file axis routes the same limited read budget
+across files within the exposed workspace.
 
-\subsection{Ablation: which design choice carries the gain?}
+\subsection{Ablation: how do the strategies interact?}
 \label{sec:ablation}
 
 The mechanism above identifies two levers---bounded attention
 (cardinality control on which iters the proposer sees) and targeted
-attention (best/worst-iter labels)---and shows that the file-axis
-hot pool gives uniform cost savings. We now isolate which of these
-is necessary, using two ablations that strip individual mechanisms
-while keeping all other context fixed.
+attention (best/worst-iter labels)---plus the file-axis hot pool that
+routes reads within the exposed workspace. We use two ablations to
+separate bounded historical exposure, labelled historical attention,
+and file-level utility guidance.
 
 \textbf{Iter-axis selection rules.}
 We compare four cardinality-bounded variants against the
@@ -477,7 +475,7 @@ force=high} freezes it at \texttt{high} (full ref-iter exposure).
 Six claudekimi runs, 30 iterations each.
 
 Table~\ref{tab:ablation} reports both ablations alongside default
-and the headline policies. Iter-axis ablation rows are run on
+and the main policies. Iter-axis ablation rows are run on
 LoCoMo / codex54 (the only cell with retained Random@$3$ /
 Recency@$3$ runs); force-budget rows are claudekimi train passrate.
 
@@ -512,10 +510,8 @@ LongMemEval & bandit force=low  & train $\mathbf{0.6300}$ & --- & $2.83$M & $\ma
 \end{tabular}
 \end{table}
 
-Two findings, one per ablation, that we read together.
-
 \textbf{Bounded attention beats full context, and the iter-axis
-selection rule is not the differentiator.}
+selection rule is not the primary driver.}
 All four cardinality-bounded variants score above default-family on
 test passrate ($+1.5$ to $+4.3$\,pp) and are cheaper on per-propose
 tokens ($-22\%$ to $-37\%$). Random@$3$ and Recency@$3$ both
@@ -536,24 +532,24 @@ total/propose, $\sim$$20\%$ cheaper than Random@$3$ and Recency@$3$
 at comparable test passrate; the file-axis is what pulls \name to
 a Pareto-favorable point under matched cardinality.
 
-\textbf{The file-axis hot pool alone is sufficient on
-LongMemEval; the iter-axis ref channel adds value only on smaller
-codebases.}
+\textbf{Strong file-level signal can compensate for a closed
+reference-iteration channel.}
 Bandit force=low almost completely removes the reference-iteration
 channel ($0.02$ ref reads/propose, zero best-iter reads, zero ref
 lines) versus $9.58$ ref reads and $7.84$ best-iter reads at
 force=high---the $36.4\% \!\to\! 0.1\%$ collapse is the
-controlled-ablation evidence that bandit's
-\texttt{best\_iterations} pointer, not the budget tier per se,
-drives reference-history reading. Despite this complete channel
-removal, LongMemEval bandit force=low reaches train $0.6300$, the
-highest LongMemEval bandit train passrate on record (above
-force=high's $0.5800$). The file-axis UCB hot-files pool alone is
-sufficient on LongMemEval. On LoCoMo, force=low reaches train
-$0.3875$ vs force=high's $0.4000$, a small drop, indicating the
-ref-iteration channel adds modest value on smaller candidate
-codebases. The Pareto trade is therefore benchmark-conditional,
-not absolute: file-axis curation captures most of the gain on
-benchmarks with rich file-pool signal; the iter-axis ref channel
-is supplementary insurance for codebases small enough that history
-labels carry concrete prescription.
+controlled-ablation evidence that the budget tier opens the
+reference-history channel. Despite this complete channel removal,
+LongMemEval bandit force=low reaches train $0.6300$, the highest
+train passrate among retained LongMemEval bandit runs (above
+force=high's $0.5800$). Thus, the LongMemEval setting contains enough
+file-level signal for the UCB hot pool to carry the search when the
+reference channel is closed. On LoCoMo,
+force=low reaches train $0.3875$ versus force=high's
+$0.4000$, a small drop, indicating that explicit reference-history
+access adds value on smaller candidate codebases where historical
+labels provide concrete prescription. The Pareto trade is therefore
+benchmark-conditional, not absolute: file-axis curation can capture
+most of the gain when file-pool signal is rich, while the iter-axis ref
+channel acts as additional guidance when historical examples are
+especially informative.
