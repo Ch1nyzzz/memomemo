@@ -269,8 +269,11 @@ actually opened by the proposer. The remaining columns decompose
 each Read call into source code, in-tree summary, or
 reference-iteration directory; \emph{ref share} is reference-iter
 reads as a fraction of all Reads; \emph{best/prop} is reads of
-\texttt{best\_iterations}-tagged dirs (NA for progressive, which
-does not surface a best list). Workspace and unique-read columns
+\texttt{best\_iterations}-tagged dirs (NA for progressive in this
+telemetry, because progressive embeds the best/worst tag in prompt
+text rather than a JSON state field; an alternative measurement
+that does not depend on the bandit JSON state is reported in
+Table~\ref{tab:top1_attention}). Workspace and unique-read columns
 aggregate over the 510 propose iterations across the 17
 auto-budget memory runs (10 bandit + 7 progressive). Read-bucket
 columns are restricted to the 8 claudekimi memory runs that retain
@@ -331,7 +334,7 @@ receive $\mathbf{14\!-\!22\times}$ more Read calls per available
 slot than unmarked refs. The worst-tagged dir is read at the same
 rate as a random unmarked ref and contributes zero read lines in
 all three runs; the proposer trusts the \texttt{best} hint and
-effectively ignores \texttt{worst}. By contrast, three default+direction
+effectively ignores \texttt{worst}. By contrast, three default
 runs that surface all prior iters without any label collapse the
 same metric to a recency-by-default pattern: the last three iters
 receive $30$--$220\times$ more reads than the first three.
@@ -347,7 +350,7 @@ otherwise skip.
   across three LongMemEval claudekimi runs per policy. Under
   bandit, best-tagged dirs receive $14$--$22\times$ more Read calls
   per slot than unmarked refs; the worst-tagged dir is read at the
-  same rate as an unmarked ref. Under default+direction, with no
+  same rate as an unmarked ref. Under default, with no
   best/worst labels, the proposer falls back to a recency prior:
   the most recent three iters are read $30$--$220\times$ more often
   than the first three. The same fixed inspection budget is routed
@@ -356,17 +359,90 @@ otherwise skip.
   \label{fig:read_concentration}
 \end{figure}
 
+\textbf{(iv)~Progressive shows the same labelled-prior effect under a
+post-hoc top-$k$ bucket scheme.}
+Figure~\ref{fig:read_concentration} measures the labelled-prior effect
+through the bandit's \texttt{best\_iterations} JSON state field.
+Progressive does not write that field --- at \texttt{low} and
+\texttt{medium} budget tiers it embeds the best/worst tag directly in
+the prompt text (\S\ref{sec:iter_axis}) --- so the slot-normalised
+statistic is bandit-only as written. To check whether progressive's
+labelling redirects attention through the same channel, we apply a
+bucket scheme that does not depend on the bandit JSON state: for every
+Read tool call landing on \texttt{reference\_iterations/iter\_M/}, we
+ask whether iter\_M was the current top-$1$ or top-$3$ by candidate
+passrate at iteration $N$'s prompt-build time (the rank pool is
+restricted to iters $< N$). Table~\ref{tab:top1_attention} aggregates
+across two retained runs per (benchmark, policy) cell on the kimi
+proposer (codex54 is excluded because its trace bucketing is
+unavailable; cf.\ Figure~\ref{fig:read_concentration}).
+
+\begin{table}[t]
+\centering
+\small
+\caption{Where the proposer's reference-iteration Read calls land,
+bucketed by post-hoc rank at prompt-build time. Each Read into
+\texttt{reference\_iterations/iter\_M/} is classified by whether
+iter\_M was the current top-$1$ / top-$3$ by passrate or among the
+three most recent iters strictly $< N$. Top-$3$ and recent-$3$
+buckets overlap by construction; \emph{other} is reads on iters in
+neither bucket. Aggregated across r1+r2 per cell on the claudekimi
+proposer (run IDs in
+\texttt{scripts/measure\_top1\_attention.py}). Progressive's reads
+land on the current top-$1$ iter at $\boldsymbol{+22}$--$\mathbf{26}$
+percentage points higher share than \texttt{default} on both
+benchmarks; LoCoMo additionally shows a $-23.1$\,pp drop in
+recent-$3$ share, the labelled prior actively pulling reads off the
+recency tail.}
+\label{tab:top1_attention}
+\begin{tabular}{@{}llrrrrr@{}}
+\toprule
+Benchmark & Policy & Total ref Reads & \% top-$1$ & \% top-$3$ & \% recent-$3$ & \% other \\
+\midrule
+\multirow{2}{*}{LongMemEval}
+ & default            & $430$ & $52.1$ & $82.3$ & $60.2$ & $3.7$ \\
+ & progressive       & $421$ & $\mathbf{77.7}$ & $\mathbf{87.6}$ & $55.6$ & $5.2$ \\
+\midrule
+\multirow{2}{*}{LoCoMo}
+ & default            & $485$ & $31.1$ & $66.6$ & $\mathbf{59.4}$ & $8.7$ \\
+ & progressive       & $422$ & $\mathbf{53.8}$ & $\mathbf{70.4}$ & $36.3$ & $15.6$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The headline number is that progressive's reads land on the current
+top-$1$ iter at substantially higher share than default's: $+25.6$\,pp
+on LongMemEval ($77.7\%$ vs $52.1\%$) and $+22.7$\,pp on LoCoMo
+($53.8\%$ vs $31.1\%$). This is the same labelled-prior effect that
+the $14$--$22\times$ reads/slot statistic quantifies for bandit, only
+observed through a bucket scheme that does not require the bandit JSON
+state. Progressive is informative as a control because its
+\texttt{best\_iterations} choice is just rank-by-current-passrate (no
+UCB, no estimator), so the redirection cannot be attributed to a
+sophisticated estimator --- the labelling itself is what moves the
+proposer's reads. LoCoMo additionally shows a $-23.1$\,pp drop in
+recent-$3$ share under progressive ($59.4\%\!\to\!36.3\%$), so on
+LoCoMo the label does not just add attention onto top-$1$, it actively
+pulls reads off the recency tail. The smaller LongMemEval recency drop
+($-4.6$\,pp) is consistent with LongMemEval progressive runs spending
+more iterations at the high budget tier, where progressive surfaces
+no labels and behaves like \texttt{default} on the ref-iter
+channel.
+
 \textbf{Mechanism summary.}
 Per-iteration read volume is roughly budget-invariant ($\sim$$20$
 unique reads, $\sim$$1.3$ reread rate, $\sim$$57$ lines per
 ref-read), so escalating budget does not buy additional inspection
 effort. What it buys is a different target distribution. Within
 that distribution, \name's \texttt{best\_iterations} pointer takes
-a $14$--$22\times$ share of the proposer's attention; the same
-fixed inspection budget that default-family spends on a
-recency-biased tail is redirected by \name onto historically
-productive iteration-and-file targets. The policy's labels, not
-the budget tier itself, drive the proposer's bounded attention.
+a $14$--$22\times$ share of the proposer's attention, and the same
+labelled-prior effect appears in Progressive under a top-$k$ bucket
+scheme (top-$1$ share $+22$--$26$\,pp over default,
+Table~\ref{tab:top1_attention}); the same fixed inspection budget
+that default-family spends on a recency-biased tail is redirected by
+\name onto historically productive iteration-and-file targets. The
+policy's labels, not the budget tier itself, drive the proposer's
+bounded attention.
 This redirection is the single mechanism behind both the
 iter-axis test gain of Section~\ref{sec:iter_axis} and the
 file-axis cost saving of Section~\ref{sec:file_axis}.

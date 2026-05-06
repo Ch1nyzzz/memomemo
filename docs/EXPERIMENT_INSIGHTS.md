@@ -712,6 +712,151 @@ more reads per slot under bandit, and early iters ~4.5x more. The bandit's
 `best_iterations` list pulls the proposer back to older iterations that the
 recency prior would otherwise skip.
 
+### Progressive shares the labelled-prior mechanism
+
+The bandit-vs-default analysis above relies on the bandit-specific
+`bandit_policy.best_iterations` JSON state field. Progressive does not write
+that field — it embeds the best/worst tag directly in the prompt text at
+`low` and `medium` budget tiers (`proposer_prompt.py:77`–`91`) — so the
+slot-normalised reads/slot statistic is bandit-only as written. The
+substantive question of whether progressive's labelling also redirects
+proposer attention is answerable through a simpler aggregation that does
+not depend on the JSON state field: for every Read tool call landing on
+`reference_iterations/iter_M/`, was iter_M the top-1 (or top-3) by
+candidate passrate at the moment iter_N's prompt was constructed?
+
+The post-hoc rank pool is restricted to `iter < N` so the bucketing only
+uses information that was already in `candidate_score_table.json` at
+prompt-build time. The "recent-3" bucket (the three most recent iters
+strictly less than N) is reported alongside as the recency-baseline
+contrast.
+
+| benchmark | policy | runs | total ref Reads | % in top-1 | % in top-3 | % in recent-3 | % in other |
+|---|---|---|---:|---:|---:|---:|---:|
+| LongMemEval | default+direction | r1+r2 | 430 | 52.1% | 82.3% | 60.2% | 3.7% |
+| LongMemEval | progressive       | r1+r2 | 421 | **77.7%** | 87.6% | 55.6% | 5.2% |
+| LoCoMo      | default+direction | r1+r2 | 485 | 31.1% | 66.6% | 59.4% | 8.7% |
+| LoCoMo      | progressive       | r1+r2 | 422 | **53.8%** | 70.4% | 36.3% | 15.6% |
+
+The top-3 and recent-3 buckets overlap by construction; "other" is reads on
+iters that are in neither bucket.
+
+The headline finding is that progressive's reads land on the current top-1
+iter at substantially higher share than default's:
+
+- LongMemEval: 77.7% vs 52.1% (**+25.6 pp** absolute, +49% relative).
+- LoCoMo: 53.8% vs 31.1% (**+22.7 pp** absolute, +73% relative).
+
+This is the same labelled-prior effect that the 14-22x reads/slot statistic
+quantifies for bandit, only measured through a bucket scheme that does not
+require the bandit JSON state. Progressive is particularly informative as a
+control because its `best_iterations` choice is just `_best_iterations` /
+`_worst_iteration` over current passrate (no UCB), so the redirection
+cannot be attributed to a sophisticated estimator — the labelling itself,
+even when chosen by simple rank, is what moves the proposer's reads.
+
+LoCoMo additionally shows a **−23.1 pp drop in recent-3 share** under
+progressive (59.4% → 36.3%). On LoCoMo, progressive does not just add
+attention onto top-1 — it actively pulls reads off the recency tail. This
+matches the bandit observation that labelled hints can override the
+recency prior. LongMemEval shows a smaller −4.6 pp recency drop, consistent
+with LongMemEval progressive runs spending more iterations at the high
+budget tier (where progressive surfaces no labels and therefore behaves
+like default+direction on the ref-iter channel).
+
+Methodology details:
+- Source: `proposer_calls/iter_NNN/agent/tool_access.json`, one entry per
+  Read tool call. Targets are extracted from each call's `file_path` via the
+  regex `reference_iterations/iter_(\d+)/`.
+- Rank pool: `candidate_score_table.json`, restricted to rows with iteration
+  in `[1, N-1]`. Per-iter row passrate is taken as `max` over candidates of
+  that iter (matches what the proposer would see in the score table).
+- Sample: two `default+direction` runs and two `progressive` autobudget
+  runs per benchmark, kimi proposer only (codex54 does not log per-call
+  `tool_uses` for Read). Run IDs are listed in
+  `scripts/measure_top1_attention.py`.
+- Caveat: passrate values are read from `candidate_score_table.json` after
+  the run finished, which is the final value for each iter row. Because
+  evaluation runs to completion before the next iter's prompt is built,
+  the prompt-time pool is approximated well; either way the relative
+  comparison between progressive and default uses the same rule on both
+  sides, so any approximation bias cancels.
+
+### Workspace cardinality changes inspection type, not amount
+
+The two preceding subsections (bandit best-tag and progressive top-$k$) measure
+the effect of *labelling* on read targets. A separate question is whether
+*workspace cardinality* — how many ref-iter dirs the policy physically copies
+into the proposer's sandbox — also changes proposer behavior in a way that
+explains the cardinality-bounded baselines (Random@3, Recent@3) outperforming
+default-family on cost. The best comparison case is `default` (workspace
+exposes all $\sim$$13$–$15$ prior iter dirs) vs `recent3` (workspace exposes
+only the most recent $3$), both with the codex54 proposer.
+
+Codex54 wraps every proposer operation as a single Shell tool call, so the
+per-Read bucketing used above for kimi (slot-normalised reads/slot, top-$k$
+share) is unavailable. As a coarse proxy, we instead extract every
+file-path token from each Shell command's text matching the regex
+`(summaries|reference_iterations|source_snapshot)/[\w./_-]+` and assign each
+path to one of seven exclusive buckets (script:
+`scripts/measure_path_buckets.py`). The buckets are: aggregated summaries,
+other summaries, ref-iter `diff.patch`/`diff_digest.md`, ref-iter
+`trace_slices/`, ref-iter `source_snapshot/`, ref-iter other (e.g.
+`pending_eval.json`), and the current clean source under
+`source_snapshot/candidate/`.
+
+Sample: 3 `default` runs and 3 `recent3` runs per benchmark on LoCoMo, plus
+2+3 on LongMemEval (LongMemEval default has only two retained 30-iter runs;
+the third crashed early). Aggregating across all 11 runs:
+
+| cell | summ-agg | summ-oth | **ref-iter-diff** | **ref-iter-trace** | ref-iter-source | ref-iter-other | clean-source |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| LoCoMo / default (n=3)      | 18.0% | 0.0% | **5.1%**  | **7.0%**  | 3.9% | 9.5%  | 56.4% |
+| LoCoMo / recent3 (n=3)      | 18.5% | 0.0% | **8.4%**  | **4.3%**  | 4.0% | 11.2% | 53.7% |
+| LongMemEval / default (n=2) | 16.3% | 0.0% | **4.4%**  | **7.1%**  | 4.4% | 12.0% | 55.8% |
+| LongMemEval / recent3 (n=3) | 19.4% | 0.0% | **8.8%**  | **4.1%**  | 3.6% | 9.9%  | 54.2% |
+
+Three observations:
+
+1. **`recent3` reads `diff.patch` / `diff_digest.md` at $\sim$$2\times$ the rate
+   of `default`** ($+1.6\times$ on LoCoMo, $+2.0\times$ on LongMemEval). Both
+   benchmarks point the same way, and every individual `recent3` run sits above
+   every individual `default` run on this column ($7.2$–$9.2\%$ vs $4.0$–$6.5\%$).
+2. **`default` reads `trace_slices/` at $\sim$$1.7\times$ the rate of `recent3`**
+   ($+1.6\times$ on LoCoMo, $+1.7\times$ on LongMemEval). Same direction across
+   benchmarks and across individual runs ($6.2$–$7.9\%$ vs $3.5$–$5.7\%$).
+3. **Aggregated `summaries/` reading is policy-invariant** (LoCoMo $18.0\%$ vs
+   $18.5\%$; LongMemEval $16.3\%$ vs $19.4\%$, with `recent3` *higher* on
+   LongMemEval). The intuition that "larger pool $\Rightarrow$ proposer falls
+   back to broad summary scanning" is **not** supported by these traces.
+
+Total ref-iter inspection share (`diff` + `trace` + `source`) is also
+policy-invariant: LoCoMo default $16.0\%$ vs recent3 $16.7\%$; LongMemEval
+default $15.9\%$ vs recent3 $16.5\%$. The proposer spends roughly the same
+share of its file-path references on past-iter contents in both cases. What
+changes is the *type* of artifact within that fixed budget:
+
+- **`recent3` favors code-level diffs** ("what did the last 3 iterations
+  actually edit, line-by-line").
+- **`default` favors example traces** ("what did the candidates from past
+  iterations produce on sample inputs").
+
+A plausible mechanistic reading: with only $3$ ref dirs available, reading all
+$3$ `diff.patch` files is cheap and information-dense — a complete picture of
+recent mechanism evolution in a few hundred lines. With $13$–$15$ dirs
+available, reading all diffs is expensive, so the proposer retreats to
+trace-level sampling instead. The "deep inspection" budget is roughly
+constant; what shifts is which artifact type is the rational cheapest signal.
+
+Caveats. Sample is codex54-only: kimi tool calls are typed (Read / Grep / etc.)
+rather than uniformly Shell, so the path-extraction proxy is unnecessary
+there but the per-Read bucketing in the prior subsection cannot be
+computed for codex54 in return. LongMemEval `default` is $n=2$ because the
+third 30-iter run crashed early. Path tokens are extracted by regex from
+command text, so any path embedded inside a heredoc or python literal is
+counted; we did not attempt to deduplicate identical paths within a single
+command.
+
 ### Takeaways
 
 - The adaptive policies' main effect on read behavior is *redistribution*, not
@@ -720,9 +865,24 @@ recency prior would otherwise skip.
 - The `best_iterations` slot is the primary lever; bandit-marked best dirs
   receive **14-22x** more reads per slot than unmarked refs across the three
   retained LongMemEval bandit runs.
+- The same labelled-prior effect appears in **progressive** under a
+  bucket-by-rank measurement that does not need the bandit JSON state:
+  progressive's reads land on the current top-1 iter at +25.6 pp share on
+  LongMemEval and +22.7 pp share on LoCoMo relative to `default+direction`.
+  Because progressive's labels are just rank-by-passrate (no UCB), this
+  shows the labelling alone — not the estimator — is what redirects
+  proposer attention.
+- Workspace cardinality changes the *type* of reference-iteration artifact the
+  proposer inspects, not the *amount*. Total ref-iter inspection share is
+  policy-invariant (~16% across LoCoMo and LongMemEval, both `default` and
+  `recent3`), but `recent3` directs that budget at `diff.patch` (~2× over
+  `default`) while `default` directs it at `trace_slices` (~1.7× over
+  `recent3`). The "broad summary scanning under large pools" hypothesis is
+  not supported: aggregated-summary reading is essentially policy-invariant
+  (16–19%) on both benchmarks.
 - The `worst_iteration` slot has near-zero observable effect on the proposer's
   read distribution; if a future revision keeps it, the worst summary should be
   surfaced more directly in the prompt rather than only as a referenced dir.
-- Without bandit hints, the proposer defaults to strong recency bias and
-  almost never re-reads early iterations; this is the failure mode that the
-  best-iter pointer corrects.
+- Without any best/worst hints, the proposer defaults to strong recency bias
+  and almost never re-reads early iterations; this is the failure mode that
+  the best-iter pointer corrects.
