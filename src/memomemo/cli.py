@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 from pathlib import Path
 
 from memomemo.benchmark_tasks import TASK_CHOICES, normalize_task_name, task_spec
@@ -29,27 +28,14 @@ from memomemo.longmemeval_optimizer import (
 )
 from memomemo.model import DEFAULT_BASE_URL, DEFAULT_MODEL
 from memomemo.claude_runner import DEFAULT_CODEX_MODEL
+from memomemo.swebench import DEFAULT_MINI_SWE_AGENT_SOURCE_PATH
+from memomemo.swebench_optimizer import SwebenchOptimizer, SwebenchOptimizerConfig
 from memomemo.scaffolds import (
     DEFAULT_BASELINE_SCAFFOLDS,
     DEFAULT_EVOLUTION_SEED_SCAFFOLDS,
     DEFAULT_SCAFFOLD_TOP_KS,
     available_scaffolds,
 )
-from memomemo.text_classification import (
-    ALL_TEXT_CLASSIFICATION_TASKS,
-    DEFAULT_TEXT_CLASSIFICATION_BASELINES,
-    DEFAULT_TEXT_CLASSIFICATION_DATASETS,
-    DEFAULT_TEXT_CLASSIFICATION_SEEDS,
-    DEFAULT_TEXT_CLASSIFICATION_SPLITS,
-    available_text_classification_memories,
-    run_text_classification_benchmark,
-)
-from memomemo.text_classification_optimizer import (
-    TextClassificationOptimizer,
-    TextClassificationOptimizerConfig,
-)
-from memomemo.tau_banking import DEFAULT_TAU2_ROOT, DEFAULT_TAU_BANKING_RETRIEVAL_CONFIGS
-from memomemo.tau_banking_optimizer import TauBankingOptimizer, TauBankingOptimizerConfig
 
 
 def main() -> int:
@@ -204,76 +190,6 @@ def main() -> int:
         help="Rerun existing baseline repeat directories instead of reusing them.",
     )
 
-    text_cls = subparsers.add_parser("text-classification")
-    text_cls_sub = text_cls.add_subparsers(dest="text_classification_command", required=True)
-    text_benchmark = text_cls_sub.add_parser("benchmark")
-    text_benchmark.add_argument(
-        "--datasets",
-        default=",".join(DEFAULT_TEXT_CLASSIFICATION_DATASETS),
-        help=f"Comma-separated datasets. Available: {', '.join(ALL_TEXT_CLASSIFICATION_TASKS)}.",
-    )
-    text_benchmark.add_argument(
-        "--memory-systems",
-        default=",".join(DEFAULT_TEXT_CLASSIFICATION_BASELINES),
-        help=(
-            "Comma-separated memory systems. Available: "
-            f"{', '.join(available_text_classification_memories())}."
-        ),
-    )
-    text_benchmark.add_argument(
-        "--seeds",
-        default=",".join(str(seed) for seed in DEFAULT_TEXT_CLASSIFICATION_SEEDS),
-        help="Comma-separated shuffle seeds.",
-    )
-    text_benchmark.add_argument(
-        "--num-train",
-        type=int,
-        default=None,
-        help="Override train split size for every selected dataset. Default: paper-specific sizes.",
-    )
-    text_benchmark.add_argument(
-        "--num-val",
-        type=int,
-        default=None,
-        help="Override val split size for every selected dataset. Default: paper-specific sizes.",
-    )
-    text_benchmark.add_argument(
-        "--num-test",
-        type=int,
-        default=None,
-        help="Override test split size for every selected dataset. Default: paper-specific sizes.",
-    )
-    text_benchmark.add_argument(
-        "--mode",
-        choices=("online", "offline"),
-        default="offline",
-        help="Training mode: online predict-then-learn, or offline learn labels then eval.",
-    )
-    text_benchmark.add_argument("--num-epochs", type=int, default=1)
-    text_benchmark.add_argument(
-        "--out",
-        type=Path,
-        default=Path("runs/text_classification_baselines"),
-    )
-    text_benchmark.add_argument("--model", default=DEFAULT_MODEL)
-    text_benchmark.add_argument("--base-url", default=DEFAULT_BASE_URL)
-    text_benchmark.add_argument("--api-key", default="EMPTY")
-    text_benchmark.add_argument("--timeout-s", type=int, default=300)
-    text_benchmark.add_argument("--dry-run", action="store_true")
-    text_benchmark.add_argument("--temperature", type=float, default=0.0)
-    text_benchmark.add_argument("--eval-workers", type=int, default=1)
-    text_benchmark.add_argument(
-        "--pareto-quality-threshold",
-        type=float,
-        default=0.0,
-        help="Quality gap threshold passed to OptiHarness's Pareto writer.",
-    )
-    text_benchmark.add_argument(
-        "--force",
-        action="store_true",
-        help="Rerun existing row result files instead of reusing them.",
-    )
-
     optimize = subparsers.add_parser("optimize")
     optimize.add_argument("--run-id", default=None)
     optimize.add_argument(
@@ -290,22 +206,16 @@ def main() -> int:
         help="Optimize the LOCOMO memory benchmark.",
     )
     task_flags.add_argument(
-        "--tau3",
-        dest="task_tau3",
-        action="store_true",
-        help="Optimize the tau3 banking_knowledge benchmark.",
-    )
-    task_flags.add_argument(
-        "--text-classification",
-        dest="task_text_classification",
-        action="store_true",
-        help="Optimize the text-classification benchmark.",
-    )
-    task_flags.add_argument(
         "--longmemeval",
         dest="task_longmemeval",
         action="store_true",
         help="Optimize the LongMemEval memory benchmark.",
+    )
+    task_flags.add_argument(
+        "--swebench",
+        dest="task_swebench",
+        action="store_true",
+        help="Optimize the SWE-bench coding-agent benchmark.",
     )
     optimize.add_argument("--iterations", type=int, default=20)
     optimize.add_argument("--split", choices=("warmup", "train", "test"), default="train")
@@ -344,11 +254,41 @@ def main() -> int:
     )
     optimize.add_argument(
         "--selection-policy",
-        choices=("default", "progressive"),
+        choices=("default", "progressive", "bandit"),
         default="default",
         help=(
-            "Use fixed-high scoped context (default) or adaptive progressive "
-            "context loading."
+            "Use fixed-high scoped context (default), adaptive progressive "
+            "context loading, or online bandit context selection."
+        ),
+    )
+    optimize.add_argument(
+        "--bandit-reward-window",
+        type=int,
+        default=8,
+        help=(
+            "Sliding-window length for bandit z-score reward. Default 8; "
+            "the published v3 LoCoMo runs use 16."
+        ),
+    )
+    optimize.add_argument(
+        "--include-optimization-direction",
+        action="store_true",
+        help=(
+            "Inject the Optimization Focus mechanism direction list into the "
+            "proposer prompt even when --selection-policy=default. Progressive "
+            "and bandit always include it."
+        ),
+    )
+    optimize.add_argument(
+        "--force-budget",
+        choices=("", "low", "medium", "high"),
+        default="",
+        help=(
+            "Override the per-iteration context budget for every iteration. "
+            "Empty (default) keeps each policy's own decision: progressive "
+            "uses its state machine, bandit uses its stagnation heuristic, "
+            "default uses fixed-high. Setting low/medium/high pins the "
+            "budget across the run for any policy."
         ),
     )
     optimize.add_argument(
@@ -418,37 +358,16 @@ def main() -> int:
         help="Load precomputed baseline candidates from this directory.",
     )
     optimize.add_argument(
-        "--text-classification-mode",
-        choices=("online", "offline"),
-        default="offline",
-        help="Text-classification optimization task variant.",
+        "--no-test-frontier",
+        action="store_true",
+        help="Do not evaluate the final train Pareto frontier on the test split.",
     )
     optimize.add_argument(
-        "--text-classification-datasets",
-        default=",".join(DEFAULT_TEXT_CLASSIFICATION_DATASETS),
-        help="Comma-separated text-classification datasets.",
-    )
-    optimize.add_argument(
-        "--text-classification-seeds",
-        default=",".join(str(seed) for seed in DEFAULT_TEXT_CLASSIFICATION_SEEDS),
-        help="Comma-separated text-classification shuffle seeds.",
-    )
-    optimize.add_argument(
-        "--text-classification-num-train",
+        "--test-frontier-limit",
         type=int,
-        default=None,
+        default=0,
+        help="Optional limit for automatic final test-frontier evaluation.",
     )
-    optimize.add_argument(
-        "--text-classification-num-val",
-        type=int,
-        default=None,
-    )
-    optimize.add_argument(
-        "--text-classification-num-test",
-        type=int,
-        default=None,
-    )
-    optimize.add_argument("--text-classification-temperature", type=float, default=0.0)
     optimize.add_argument("--longmemeval-variant", choices=("s", "m", "oracle"), default="s")
     optimize.add_argument("--longmemeval-data-path", type=Path, default=None)
     optimize.add_argument("--longmemeval-split-path", type=Path, default=None)
@@ -458,37 +377,27 @@ def main() -> int:
     optimize.add_argument("--longmemeval-judge-api-key", default=None)
     optimize.add_argument("--longmemeval-judge-timeout-s", type=int, default=300)
     optimize.add_argument("--longmemeval-no-llm-judge", action="store_true")
+    optimize.add_argument("--swebench-data-path", type=Path, default=None)
     optimize.add_argument(
-        "--tau3-root",
+        "--mini-swe-agent-source-path",
         type=Path,
-        default=None,
-        help="tau2-bench checkout root. Defaults to TAU3_BENCH_ROOT/TAU2_BENCH_ROOT or references/vendor/tau2-bench.",
+        default=DEFAULT_MINI_SWE_AGENT_SOURCE_PATH,
+        help="Path to a local mini-SWE-agent source checkout.",
     )
     optimize.add_argument(
-        "--tau3-python",
-        default=None,
-        help="Python command for tau2-bench. Defaults to TAU_PYTHON or python.",
+        "--mini-swe-agent-command",
+        default="",
+        help=(
+            "Command template that runs one task and writes {patch_path}. "
+            "Placeholders include {source_path}, {task_dir}, {instance_path}, "
+            "{patch_path}, {instance_id}, {repo}, and {base_commit}."
+        ),
     )
     optimize.add_argument(
-        "--tau3-retrieval-configs",
-        default=",".join(DEFAULT_TAU_BANKING_RETRIEVAL_CONFIGS),
-        help="Comma-separated tau3 retrieval configs.",
+        "--mini-swe-agent-eval-command",
+        default="",
+        help="Optional command template that evaluates {patch_path}; exit code 0 means pass.",
     )
-    optimize.add_argument("--tau3-retrieval-config-kwargs-json", default="{}")
-    optimize.add_argument("--tau3-task-split-name", default="base")
-    optimize.add_argument("--tau3-task-ids", default="")
-    optimize.add_argument("--tau3-num-tasks", type=int, default=5)
-    optimize.add_argument("--tau3-num-trials", type=int, default=1)
-    optimize.add_argument("--tau3-max-steps", type=int, default=200)
-    optimize.add_argument("--tau3-max-errors", type=int, default=10)
-    optimize.add_argument("--tau3-max-concurrency", type=int, default=1)
-    optimize.add_argument("--tau3-seed", type=int, default=300)
-    optimize.add_argument("--tau3-agent-llm", default="openai/gpt-4.1-mini")
-    optimize.add_argument("--tau3-user-llm", default="openai/gpt-4.1-mini")
-    optimize.add_argument("--tau3-agent-llm-args-json", default='{"temperature": 0.0}')
-    optimize.add_argument("--tau3-user-llm-args-json", default='{"temperature": 0.0}')
-    optimize.add_argument("--tau3-process-timeout-s", type=int, default=0)
-
     args = parser.parse_args()
     if args.command == "locomo" and args.locomo_command == "prepare":
         payload = prepare_locomo(
@@ -598,30 +507,6 @@ def main() -> int:
         print(json.dumps(payload, indent=2, ensure_ascii=False))
         return 0
 
-    if args.command == "text-classification" and args.text_classification_command == "benchmark":
-        payload = run_text_classification_benchmark(
-            out_dir=args.out,
-            datasets=_csv(args.datasets),
-            memory_systems=_csv(args.memory_systems),
-            seeds=[int(item) for item in _csv(args.seeds)],
-            num_train=args.num_train,
-            num_val=args.num_val,
-            num_test=args.num_test,
-            mode=args.mode,
-            num_epochs=args.num_epochs,
-            model=args.model,
-            base_url=args.base_url,
-            api_key=args.api_key,
-            timeout_s=args.timeout_s,
-            dry_run=args.dry_run,
-            temperature=args.temperature,
-            max_eval_workers=args.eval_workers,
-            force=args.force,
-            pareto_quality_threshold=args.pareto_quality_threshold,
-        )
-        print(json.dumps(payload, indent=2, ensure_ascii=False))
-        return 0
-
     if args.command == "optimize":
         try:
             selected_task = _optimize_task(args)
@@ -630,47 +515,6 @@ def main() -> int:
         selected_spec = task_spec(selected_task)
         run_id = args.run_id or selected_spec.default_run_id
         out_dir = args.out or Path("runs") / run_id
-        if selected_task == "text_classification":
-            optimizer = TextClassificationOptimizer(
-                TextClassificationOptimizerConfig(
-                    run_id=run_id,
-                    out_dir=out_dir,
-                    iterations=args.iterations,
-                    mode=args.text_classification_mode,
-                    datasets=tuple(_csv(args.text_classification_datasets)),
-                    seeds=tuple(int(item) for item in _csv(args.text_classification_seeds)),
-                    num_train=args.text_classification_num_train,
-                    num_val=args.text_classification_num_val,
-                    num_test=args.text_classification_num_test,
-                    model=args.model,
-                    base_url=args.base_url,
-                    api_key=args.api_key,
-                    eval_timeout_s=args.eval_timeout_s,
-                    proposer_agent=args.proposer_agent,
-                    claude_model=args.claude_model,
-                    codex_model=args.codex_model,
-                    kimi_model=args.kimi_model,
-                    propose_timeout_s=args.propose_timeout_s,
-                    dry_run=args.dry_run,
-                    temperature=args.text_classification_temperature,
-                    max_eval_workers=args.eval_workers,
-                    skip_baseline_eval=args.skip_scaffold_eval,
-                    force=args.force,
-                    selection_policy=args.selection_policy,
-                    proposer_sandbox=args.proposer_sandbox,
-                    proposer_docker_image=args.proposer_docker_image,
-                    proposer_docker_workspace=args.proposer_docker_workspace,
-                    proposer_docker_env=tuple(_csv_many(args.proposer_docker_env)),
-                    proposer_docker_mount=tuple(args.proposer_docker_mount or ()),
-                    proposer_docker_kimi_cli_kind=args.proposer_docker_kimi_cli_kind,
-                    proposer_docker_user=args.proposer_docker_user,
-                    proposer_docker_home=args.proposer_docker_home,
-                )
-            )
-            payload = optimizer.run()
-            print(json.dumps(payload, indent=2, ensure_ascii=False))
-            return 0
-
         if selected_task == "longmemeval":
             selected_scaffolds = (
                 _csv(args.scaffolds)
@@ -711,6 +555,9 @@ def main() -> int:
                     scaffolds=tuple(selected_scaffolds),
                     scaffold_extra=scaffold_extra,
                     selection_policy=args.selection_policy,
+                    include_optimization_direction=args.include_optimization_direction,
+                    force_budget=args.force_budget,
+                    bandit_reward_window=args.bandit_reward_window,
                     pareto_quality_threshold=args.pareto_quality_threshold,
                     proposer_sandbox=args.proposer_sandbox,
                     proposer_docker_image=args.proposer_docker_image,
@@ -720,54 +567,45 @@ def main() -> int:
                     proposer_docker_kimi_cli_kind=args.proposer_docker_kimi_cli_kind,
                     proposer_docker_user=args.proposer_docker_user,
                     proposer_docker_home=args.proposer_docker_home,
+                    test_frontier=not args.no_test_frontier,
+                    test_limit=args.test_frontier_limit,
                 )
             )
             payload = optimizer.run()
             print(json.dumps(payload, indent=2, ensure_ascii=False))
             return 0
 
-        if selected_task == "tau3":
-            optimizer = TauBankingOptimizer(
-                TauBankingOptimizerConfig(
+        if selected_task == "swebench":
+            optimizer = SwebenchOptimizer(
+                SwebenchOptimizerConfig(
                     run_id=run_id,
                     out_dir=out_dir,
                     iterations=args.iterations,
-                    tau2_root=_tau3_root(args.tau3_root),
-                    python_executable=_tau3_python(args.tau3_python),
-                    retrieval_configs=tuple(_csv(args.tau3_retrieval_configs)),
-                    retrieval_config_kwargs=_json_object(
-                        args.tau3_retrieval_config_kwargs_json,
-                        "--tau3-retrieval-config-kwargs-json",
-                    ),
-                    task_split_name=args.tau3_task_split_name,
-                    task_ids=tuple(_csv(args.tau3_task_ids)),
-                    num_tasks=None if args.tau3_num_tasks < 0 else args.tau3_num_tasks,
-                    num_trials=args.tau3_num_trials,
-                    max_steps=args.tau3_max_steps,
-                    max_errors=args.tau3_max_errors,
-                    max_concurrency=args.tau3_max_concurrency,
-                    seed=args.tau3_seed,
-                    agent_llm=args.tau3_agent_llm,
-                    user_llm=args.tau3_user_llm,
-                    agent_llm_args=_json_object(
-                        args.tau3_agent_llm_args_json,
-                        "--tau3-agent-llm-args-json",
-                    ),
-                    user_llm_args=_json_object(
-                        args.tau3_user_llm_args_json,
-                        "--tau3-user-llm-args-json",
-                    ),
-                    process_timeout_s=(
-                        None if args.tau3_process_timeout_s <= 0 else args.tau3_process_timeout_s
-                    ),
+                    split=args.split,
+                    limit=args.limit,
+                    data_path=args.swebench_data_path,
+                    mini_swe_agent_source_path=args.mini_swe_agent_source_path,
+                    mini_swe_agent_command=args.mini_swe_agent_command,
+                    mini_swe_agent_eval_command=args.mini_swe_agent_eval_command,
+                    model=args.model,
+                    base_url=args.base_url,
+                    api_key=args.api_key,
                     eval_timeout_s=args.eval_timeout_s,
                     proposer_agent=args.proposer_agent,
                     claude_model=args.claude_model,
                     codex_model=args.codex_model,
                     kimi_model=args.kimi_model,
                     propose_timeout_s=args.propose_timeout_s,
-                    skip_baseline_eval=args.skip_scaffold_eval,
-                    force=args.force,
+                    dry_run=args.dry_run,
+                    max_context_chars=args.max_context_chars,
+                    max_eval_workers=args.eval_workers,
+                    skip_scaffold_eval=args.skip_scaffold_eval,
+                    baseline_dir=args.baseline_dir,
+                    selection_policy=args.selection_policy,
+                    include_optimization_direction=args.include_optimization_direction,
+                    force_budget=args.force_budget,
+                    bandit_reward_window=args.bandit_reward_window,
+                    pareto_quality_threshold=args.pareto_quality_threshold,
                     proposer_sandbox=args.proposer_sandbox,
                     proposer_docker_image=args.proposer_docker_image,
                     proposer_docker_workspace=args.proposer_docker_workspace,
@@ -776,6 +614,7 @@ def main() -> int:
                     proposer_docker_kimi_cli_kind=args.proposer_docker_kimi_cli_kind,
                     proposer_docker_user=args.proposer_docker_user,
                     proposer_docker_home=args.proposer_docker_home,
+                    force=args.force,
                 )
             )
             payload = optimizer.run()
@@ -812,6 +651,9 @@ def main() -> int:
                 scaffolds=tuple(selected_scaffolds),
                 scaffold_extra=scaffold_extra,
                 selection_policy=args.selection_policy,
+                include_optimization_direction=args.include_optimization_direction,
+                force_budget=args.force_budget,
+                bandit_reward_window=args.bandit_reward_window,
                 pareto_quality_threshold=args.pareto_quality_threshold,
                 proposer_sandbox=args.proposer_sandbox,
                 proposer_docker_image=args.proposer_docker_image,
@@ -821,6 +663,8 @@ def main() -> int:
                 proposer_docker_kimi_cli_kind=args.proposer_docker_kimi_cli_kind,
                 proposer_docker_user=args.proposer_docker_user,
                 proposer_docker_home=args.proposer_docker_home,
+                test_frontier=not args.no_test_frontier,
+                test_limit=args.test_frontier_limit,
             )
         )
         payload = optimizer.run()
@@ -856,21 +700,13 @@ def _scaffold_extra(value: str | None) -> dict[str, dict[str, object]]:
     return out
 
 
-def _json_object(value: str, flag: str) -> dict[str, object]:
-    payload = json.loads(value)
-    if not isinstance(payload, dict):
-        raise ValueError(f"{flag} must be a JSON object")
-    return dict(payload)
-
-
 def _optimize_task(args: argparse.Namespace) -> str:
     flag_tasks = [
         task
         for task, enabled in (
             ("locomo", args.task_locomo),
             ("longmemeval", args.task_longmemeval),
-            ("tau3", args.task_tau3),
-            ("text_classification", args.task_text_classification),
+            ("swebench", args.task_swebench),
         )
         if enabled
     ]
@@ -879,18 +715,6 @@ def _optimize_task(args: argparse.Namespace) -> str:
     if flag_tasks:
         return flag_tasks[0]
     return normalize_task_name(args.task)
-
-
-def _tau3_root(value: Path | None) -> Path:
-    if value is not None:
-        return value
-    env_value = os.environ.get("TAU3_BENCH_ROOT") or os.environ.get("TAU2_BENCH_ROOT")
-    return Path(env_value) if env_value else DEFAULT_TAU2_ROOT
-
-
-def _tau3_python(value: str | None) -> str:
-    return value or os.environ.get("TAU_PYTHON") or "python"
-
 
 def _format_scaffold_top_k_defaults(scaffolds: tuple[str, ...]) -> str:
     return ", ".join(

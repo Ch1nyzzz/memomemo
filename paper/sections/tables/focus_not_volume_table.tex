@@ -1,0 +1,24 @@
+\begin{table}[t]
+\centering
+\small
+\caption{Workspace pool inflates with budget; per-iteration unique
+reads do not. Aggregated over 510 propose iterations across the 17
+auto-budget memory runs. \emph{Workspace files} is the number of
+distinct files physically copied into the propose sandbox; \emph{unique
+files read} is the number actually opened by the proposer; \emph{lines}
+is total bytes-of-prose-equivalent read.}
+\label{tab:focus_not_volume}
+\begin{tabular}{@{}llrrrrrr@{}}
+\toprule
+Policy & Budget & iters & workspace files & unique read & read\_lines & dur (s) \\
+\midrule
+\multirow{3}{*}{bandit}      & low    & 10  & $1{,}222$  & $15.9$ & $2{,}314$ & $781$ \\
+                              & medium & 138 & $6{,}191$  & $17.9$ & $2{,}975$ & $923$ \\
+                              & high   & 152 & $\mathbf{21{,}648}$ & $\mathbf{19.2}$ & $3{,}472$ & $917$ \\
+\midrule
+\multirow{3}{*}{progressive} & low    & 52  & $3{,}170$  & $17.5$ & $2{,}847$ & $615$ \\
+                              & medium & 18  & $6{,}102$  & $20.2$ & $3{,}230$ & $743$ \\
+                              & high   & 140 & $\mathbf{21{,}790}$ & $18.7$ & $3{,}204$ & $709$ \\
+\bottomrule
+\end{tabular}
+\end{table}

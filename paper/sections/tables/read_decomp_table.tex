@@ -1,0 +1,28 @@
+\begin{table}[t]
+\centering
+\small
+\caption{Read-call decomposition under auto-budget, restricted to the
+8 claudekimi memory runs that retain per-call \texttt{tool\_access.json}
+traces (240 iterations). Each Read call lands in one of three buckets:
+source code, summary file, or reference-iteration directory. Reference
+reads are further split for bandit into best-tagged dirs (the policy's
+\texttt{best\_iterations} pointer). Codex54 is excluded because its
+trace bucketing is unavailable. The bandit \texttt{low} cell has only
+$n\!=\!5$ iterations because the policy almost immediately escalates;
+the qualitative pattern is confirmed by the \texttt{force=low} ablation
+(Table~\ref{tab:force_budget}).}
+\label{tab:read_decomp}
+\begin{tabular}{@{}llrrrrrr@{}}
+\toprule
+Policy & Budget & iters & source/prop & summary/prop & ref/prop & ref\,share & best/prop \\
+\midrule
+\multirow{3}{*}{bandit}      & low    & $5$  & $12.00$ & $5.60$ & $0.00$  & $0.0\%$  & $0.00$ \\
+                              & medium & $74$ & $8.86$  & $5.93$ & $7.23$  & $31.2\%$ & $6.21$ \\
+                              & high   & $71$ & $8.37$  & $5.37$ & $\mathbf{12.30}$ & $\mathbf{46.8\%}$ & $\mathbf{9.25}$ \\
+\midrule
+\multirow{3}{*}{progressive} & low    & $24$ & $9.25$  & $5.50$ & $6.96$  & $30.4\%$ & NA \\
+                              & medium & $8$  & $12.00$ & $4.88$ & $9.00$  & $33.0\%$ & NA \\
+                              & high   & $58$ & $9.28$  & $6.14$ & $11.95$ & $43.4\%$ & NA \\
+\bottomrule
+\end{tabular}
+\end{table}

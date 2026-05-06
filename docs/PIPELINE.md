@@ -208,16 +208,25 @@ into `hot` and excluded from ranking):
 - `hot` = core_files + top-8, read budget = 800 lines
 - `warm` = next 12, read budget = 300 lines
 
-Budget / `trace_scope` selection:
+Budget / `trace_scope` selection (bandit v4):
 
 ```
 iter == 1 or no file statistics yet      → low / last1 / refs=()
 stagnation ≥ bandit_stagnation_threshold (=4)
                                           → high / all / full history refs
-otherwise                                 → medium / last3 / (iters where
-                                            hot files appeared
-                                            ∪ best3 ∪ last_improved, cap 5)
+otherwise                                 → medium / last3 / hot_iters first,
+                                            then best3 + worst, cap 5
+force_budget=low                          → low / last1 / hot_iters first,
+                                            then best1 + worst, cap 3
 ```
+
+The `low`/`medium` ref-selection rule is now structurally aligned with
+progressive (best k + worst), with the hot-file-derived iters
+(`_iters_from_policy_paths(last_policy.hot_files + warm_files)`) prepended
+so that "the iter whose artifacts are still being read" gets pinned ahead
+of the best/worst fallback. v3's `last_improvement` fallback is no longer
+used for ref-selection (it is still used for stagnation accounting in
+`_bandit_policy_for_workspace`).
 
 ### 3.2 Reward (the key change in v3)
 
@@ -322,7 +331,7 @@ cannot demote essential files into warm/cold.
 | Dimension              | default              | progressive                                  | bandit v3                                            |
 |------------------------|----------------------|----------------------------------------------|------------------------------------------------------|
 | Budget selection       | always `high`        | state machine (`low`→…→`high`)               | heuristic + stagnation threshold (`low/medium/high`) |
-| Reference iterations   | full history         | by budget: best k + worst                    | iters where hot files appeared, fallback to best3 / last_improved |
+| Reference iterations   | full history         | by budget: best k + worst                    | hot_iters (from last_policy hot/warm) prepended, then best k + worst (cap 3 / 5; v4) |
 | Trace-scope trim       | `all`                | `last1 / last3 / all`                        | same three tiers, derived from budget                |
 | Prompt extras          | base prompt only     | + Optimization Focus + Progressive role hints | + Optimization Focus + Bandit role hints + Bandit Context Policy (hot/warm lists) |
 | Feedback signal        | none                 | did this iter enter a new frontier?          | rolling-window z-score (passrate only)               |

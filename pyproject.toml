@@ -31,10 +31,6 @@ source = [
 dev = [
   "pytest>=8.0",
 ]
-benchmark = [
-  "datasets>=2.19.0",
-]
-
 [project.scripts]
 optiharness = "optiharness.cli:main"
 memomemo = "memomemo.cli:main"

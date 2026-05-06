@@ -1,4 +1,4 @@
-"""Pareto frontier over passrate and token consumption."""
+"""Pareto frontier over passrate and average score."""
 
 from __future__ import annotations
 
@@ -25,19 +25,30 @@ class ParetoPoint:
 def dominates(a: ParetoPoint, b: ParetoPoint, *, quality_gap_threshold: float = 0.0) -> bool:
     """Return True if `a` dominates `b`.
 
-    Higher passrate is better. Lower token_consuming is better.
-    If `quality_gap_threshold` is positive, a point with a passrate advantage
-    larger than that threshold dominates lower-quality points even when it
-    spends more tokens.
+    Higher passrate is better. Higher average_score is better. Token use is a
+    tie-breaker when quality is identical.
+
+    `quality_gap_threshold` is retained for API compatibility. When positive,
+    a point with a passrate advantage larger than that threshold dominates only
+    if it is not worse on average_score.
     """
 
-    if quality_gap_threshold > 0 and (a.passrate - b.passrate) > quality_gap_threshold:
+    if (
+        quality_gap_threshold > 0
+        and (a.passrate - b.passrate) > quality_gap_threshold
+        and a.average_score >= b.average_score
+    ):
         return True
 
     passrate_ge = a.passrate >= b.passrate
-    tokens_le = a.token_consuming <= b.token_consuming
-    strict = a.passrate > b.passrate or a.token_consuming < b.token_consuming
-    return passrate_ge and tokens_le and strict
+    score_ge = a.average_score >= b.average_score
+    strict_quality = a.passrate > b.passrate or a.average_score > b.average_score
+    equal_quality_cheaper = (
+        a.passrate == b.passrate
+        and a.average_score == b.average_score
+        and a.token_consuming < b.token_consuming
+    )
+    return passrate_ge and score_ge and (strict_quality or equal_quality_cheaper)
 
 
 def pareto_frontier(
@@ -57,7 +68,14 @@ def pareto_frontier(
         ):
             continue
         frontier.append(point)
-    frontier.sort(key=lambda item: (-item.passrate, item.token_consuming, item.candidate_id))
+    frontier.sort(
+        key=lambda item: (
+            -item.passrate,
+            -item.average_score,
+            item.token_consuming,
+            item.candidate_id,
+        )
+    )
     return frontier
 
 

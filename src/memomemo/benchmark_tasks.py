@@ -42,32 +42,20 @@ LONGMEMEVAL_TASK = BenchmarkTaskSpec(
     description="LongMemEval long-term memory QA over the LOCOMO/MemGPT memory scaffold base agent.",
 )
 
-TAU3_TASK = BenchmarkTaskSpec(
-    slug="tau3",
-    aliases=("tau", "tau_banking", "tau3_banking", "banking_knowledge"),
-    benchmark="tau3_banking_knowledge",
-    base_agent_system="tau3_banking_knowledge_base_agent",
-    optimizer_kind="tau3_banking_agent",
-    default_run_id="tau3_banking_opt",
-    description="tau3/tau2-bench banking_knowledge tool-agent-user benchmark.",
+SWEBENCH_TASK = BenchmarkTaskSpec(
+    slug="swebench",
+    aliases=("swe-bench", "swe_bench", "coding"),
+    benchmark="swebench",
+    base_agent_system="mini_swe_agent_source",
+    optimizer_kind="coding_agent",
+    default_run_id="swebench_mini_swe_agent_opt",
+    description="SWE-bench-style software engineering tasks over a source-backed mini-SWE-agent coding agent.",
 )
-
-TEXT_CLASSIFICATION_TASK = BenchmarkTaskSpec(
-    slug="text_classification",
-    aliases=("text-classification", "textcls", "classification"),
-    benchmark="text_classification",
-    base_agent_system="text_classification_fewshot_memory",
-    optimizer_kind="text_classification_memory",
-    default_run_id="text_classification_opt",
-    description="Meta-Harness text-classification few-shot memory benchmark.",
-)
-
 
 BENCHMARK_TASKS: tuple[BenchmarkTaskSpec, ...] = (
     LOCOMO_TASK,
     LONGMEMEVAL_TASK,
-    TAU3_TASK,
-    TEXT_CLASSIFICATION_TASK,
+    SWEBENCH_TASK,
 )
 
 _TASK_BY_NAME = {

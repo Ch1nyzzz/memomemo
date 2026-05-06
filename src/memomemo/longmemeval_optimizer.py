@@ -52,6 +52,9 @@ class LongMemEvalOptimizer(LocomoOptimizer):
         super().__init__(config)
 
     def _load_examples(self) -> list[LocomoExample]:
+        return self._load_examples_for_split(self.config.split, self.config.limit)
+
+    def _load_examples_for_split(self, split: str, limit: int = 0) -> list[LocomoExample]:
         data_path = self.config.data_path
         if data_path is None or not data_path.exists():
             prepare_longmemeval(
@@ -65,12 +68,12 @@ class LongMemEvalOptimizer(LocomoOptimizer):
         )
         selected = select_split(
             examples,
-            split=self.config.split,
+            split=split,
             variant=self.config.dataset_variant,
             split_path=self.config.split_path,
         )
-        if self.config.limit:
-            selected = selected[: self.config.limit]
+        if limit:
+            selected = selected[:limit]
         return selected
 
     def _run_seed_frontier(self) -> dict[str, Any]:
@@ -105,7 +108,12 @@ class LongMemEvalOptimizer(LocomoOptimizer):
     def _raw_data_policy_name(self) -> str:
         return "raw LongMemEval data"
 
-    def _make_evaluation_runner(self, examples: list[LocomoExample]) -> EvaluationRunner:
+    def _make_evaluation_runner(
+        self,
+        examples: list[LocomoExample],
+        *,
+        out_dir: Path | None = None,
+    ) -> EvaluationRunner:
         score_run = _fallback_score_run
         if self.config.use_llm_judge and not self.config.dry_run:
             judge_api_key = self.config.judge_api_key or os.environ.get(
@@ -126,7 +134,7 @@ class LongMemEvalOptimizer(LocomoOptimizer):
             ).score_run
         return EvaluationRunner(
             examples=examples,
-            out_dir=self.run_dir,
+            out_dir=out_dir or self.run_dir,
             model=self.config.model,
             base_url=self.config.base_url,
             api_key=self.config.api_key,

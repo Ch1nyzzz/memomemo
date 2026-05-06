@@ -1,0 +1,20 @@
+\section{Limitations}
+\label{sec:limits}
+
+\todo{Limitations: defer writeup until experiment coverage is final.
+Notes for the eventual draft:
+(a) per-cell sample size is small ($n\!=\!2\!-\!3$ retained runs),
+no statistical-significance claims on individual cells;
+(b) iter-axis ablation (Random@$3$, Recency@$3$) currently anchored
+on LoCoMo / codex54 only; LongMemEval / codex54 train-complete but
+test eval pending; SWE-bench mini scheduled, not yet retained;
+(c) mechanism analysis is claudekimi-only because the codex54
+proposer's tool calls are bucketed under a single \texttt{Shell} type
+without per-Read targets;
+(d) two LoCoMo headline cells (claudekimi progressive, codex54
+bandit) are docs-only; per-iteration artifacts are no longer on disk
+and the corresponding read-decomposition cells are NA;
+(e) SWE-bench mini extensions of Q2 cost-direction reversal and Q3
+mechanism transfer analysis are held back until additional retained
+runs land (cross-references in Q2 and Q3 \texttt{\textbackslash todo}
+markers).}
