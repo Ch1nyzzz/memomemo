@@ -293,6 +293,42 @@ def main() -> int:
         ),
     )
     optimize.add_argument(
+        "--progressive-low-best-count",
+        type=int,
+        default=1,
+        help=(
+            "Number of best reference iterations surfaced to the proposer "
+            "during low-budget iterations (selection_policy=progressive). "
+            "Default 1."
+        ),
+    )
+    optimize.add_argument(
+        "--progressive-medium-best-count",
+        type=int,
+        default=3,
+        help=(
+            "Number of best reference iterations surfaced to the proposer "
+            "during medium-budget iterations (selection_policy=progressive). "
+            "Default 3."
+        ),
+    )
+    optimize.add_argument(
+        "--progressive-include-worst",
+        dest="progressive_include_worst",
+        action="store_true",
+        default=True,
+        help=(
+            "Include the worst reference iteration alongside the best ones "
+            "for low/medium progressive iterations (default)."
+        ),
+    )
+    optimize.add_argument(
+        "--no-progressive-include-worst",
+        dest="progressive_include_worst",
+        action="store_false",
+        help="Drop the worst reference iteration; surface only best iterations.",
+    )
+    optimize.add_argument(
         "--proposer-sandbox",
         choices=("none", "docker"),
         default="docker",
@@ -558,6 +594,9 @@ def main() -> int:
                     selection_policy=args.selection_policy,
                     include_optimization_direction=args.include_optimization_direction,
                     force_budget=args.force_budget,
+                    progressive_low_best_count=args.progressive_low_best_count,
+                    progressive_medium_best_count=args.progressive_medium_best_count,
+                    progressive_include_worst=args.progressive_include_worst,
                     bandit_reward_window=args.bandit_reward_window,
                     pareto_quality_threshold=args.pareto_quality_threshold,
                     proposer_sandbox=args.proposer_sandbox,
@@ -605,6 +644,9 @@ def main() -> int:
                     selection_policy=args.selection_policy,
                     include_optimization_direction=args.include_optimization_direction,
                     force_budget=args.force_budget,
+                    progressive_low_best_count=args.progressive_low_best_count,
+                    progressive_medium_best_count=args.progressive_medium_best_count,
+                    progressive_include_worst=args.progressive_include_worst,
                     bandit_reward_window=args.bandit_reward_window,
                     pareto_quality_threshold=args.pareto_quality_threshold,
                     proposer_sandbox=args.proposer_sandbox,
@@ -654,6 +696,9 @@ def main() -> int:
                 selection_policy=args.selection_policy,
                 include_optimization_direction=args.include_optimization_direction,
                 force_budget=args.force_budget,
+                progressive_low_best_count=args.progressive_low_best_count,
+                progressive_medium_best_count=args.progressive_medium_best_count,
+                progressive_include_worst=args.progressive_include_worst,
                 bandit_reward_window=args.bandit_reward_window,
                 pareto_quality_threshold=args.pareto_quality_threshold,
                 proposer_sandbox=args.proposer_sandbox,

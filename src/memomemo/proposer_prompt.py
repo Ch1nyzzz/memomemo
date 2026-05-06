@@ -50,6 +50,7 @@ def build_progressive_proposer_prompt(
     bandit_policy: dict[str, object] | None = None,
     benchmark_name: str = "LOCOMO conversational-memory QA",
     raw_data_policy: str = "raw LOCOMO data",
+    progressive_best_count: int | None = None,
 ) -> str:
     """Build the proposer prompt for scoped progressive-context runs."""
 
@@ -75,7 +76,10 @@ overall system-level redesign:
 
     refs = ", ".join(f"iter_{item:03d}" for item in reference_iterations) or "none"
     if selection_policy == "progressive" and budget in {"low", "medium"}:
-        best_count = 3 if budget == "medium" else 1
+        if progressive_best_count is None:
+            best_count = 3 if budget == "medium" else 1
+        else:
+            best_count = max(0, int(progressive_best_count))
         best_refs = reference_iterations[:best_count]
         worst_refs = reference_iterations[best_count:]
         best_label = ", ".join(f"iter_{item:03d}" for item in best_refs) or "none"
