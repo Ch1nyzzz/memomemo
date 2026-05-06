@@ -6,11 +6,13 @@ harness optimization. Rather than treating a coding proposer's filesystem
 access as an all-or-nothing choice, \name makes the proposer's evidence
 workspace an explicit control variable. Its iteration-level strategy bounds
 and labels historical evidence, while its file-level strategy can be composed
-to reallocate read effort within the exposed workspace. Across memory and
-software-engineering harnesses, this framing improves held-out performance in
-most settings and introduces lower-cost operating points on the cost--quality
-frontier. The results do not imply that more curation is always better, or
-that the two strategies contribute independently. They show instead that the
-proposer's limited inspection budget is itself part of the optimization
-problem, and that routing this budget deliberately can make harness search
-more effective.
+on top to reallocate read effort within the exposed workspace. Across memory
+and software-engineering harnesses, this framing improves held-out
+performance in most (benchmark, proposer) settings. On the two memory
+benchmarks it opens lower-cost operating points on the cost--quality
+frontier; on SWE-bench Verified it instead trades a modest cost increase for
+a substantially stronger curated harness. The results do not imply that more
+curation is always better, nor that the two strategies contribute
+independently. They show instead that the proposer's limited inspection
+budget is itself part of the optimization problem, and that routing this
+budget deliberately can make harness search more effective.

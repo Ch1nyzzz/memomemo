@@ -1,82 +1,32 @@
 \section{Related Work}
 \label{sec:related}
 
-\paragraph{Automated harness and prompt optimization.}
-Several lines of work use LLMs to optimize their own reasoning or
-action scaffolds.  At the prompt level, OPRO~\cite{yang2024opro} frames
-prompt engineering as black-box optimization with LLM-generated candidates,
-and EvoPrompt~\cite{guo2024evoprompt} couples evolutionary operators with
-LLM mutation to search the prompt space.
-DSPy~\cite{khattab2023dspy} lifts the abstraction further, compiling
-declarative module signatures into optimized few-shot chains.  Moving
-beyond prompts to full harness code, ADAS~\cite{hu2024adas} introduces a
-propose--evaluate loop in which an LLM writes new agent programs from
-scratch each iteration, searching over a growing archive of prior designs.
-Meta-Harness~\cite{lee2026metaharness} extends this to file-level
-optimization: a coding agent with full filesystem access edits harness
-files in place, using its chain-of-thought as the implicit search
-gradient.  ACE~\cite{zhang2025ace} takes a complementary view, evolving
-the agent's \emph{context}---system prompts and memory
-playbooks---through generation, reflection, and curation stages rather
-than modifying harness code.  All of these systems leave the proposer's
-\emph{attention} unmanaged: the proposer either sees a fixed context or
-the entire workspace.  Our work introduces adaptive context-curation
-strategies that decide which prior iterations and which files should be
-made salient at each proposal step, treating proposer attention as a
-first-class optimization lever.
+\paragraph{Automated harness optimization.}
+The closest line of work uses LLMs as outer-loop optimizers for prompts,
+agent programs, or harness code. OPRO~\cite{yang2024opro} casts prompt
+engineering as black-box optimization with LLM-generated candidates;
+GEPA~\cite{agrawal2025gepa} refines prompts using reflective textual
+feedback. ADAS~\cite{hu2024adas} moves from prompts to agent programs,
+having an LLM propose new scaffolds from an archive of prior designs.
+Meta-Harness~\cite{lee2026metaharness} is closest to our setting: it
+optimizes harness files with a coding agent that can inspect the full
+filesystem history of previous candidates. Related program-search systems
+such as FunSearch, AlphaEvolve, and OpenEvolve use LLMs as mutators under
+automated fitness functions; we discuss these broader connections in
+Appendix~\ref{app:supp_related}. \name keeps this file-backed optimization
+interface but changes the information policy around it. Rather than exposing
+the entire accumulated workspace or compressing it into a fixed summary,
+\name chooses which prior iterations and file hints should be salient before
+each proposal.
 
-\paragraph{Evolutionary code search.}
-LLM-driven evolutionary algorithms demonstrate that language models can
-serve as effective program mutators guided by automated fitness functions.
-FunSearch~\cite{romeraparedes2024funsearch} pairs an LLM with island-based
-evolution to discover novel mathematical constructions;
-AlphaEvolve~\cite{novikov2025alphaevolve} generalizes this to multi-file
-codebases with a Gemini-powered coding agent, and
-OpenEvolve~\cite{sharma2025openevolve} provides an open-source
-reimplementation.  ELM~\cite{lehman2023elm} formalizes LLMs as general
-mutation operators within evolutionary computation.  These systems
-maintain explicit populations with fitness-proportional selection and
-optimize \emph{programs} (algorithms, heuristics) via evolutionary
-pressure.  In contrast, our framework optimizes \emph{agent harnesses}
-(memory, retrieval, tool-use orchestration), maintains a Pareto frontier
-rather than a population, and replaces selection pressure with directed
-attention management over a single proposer's context window.
-
-\paragraph{Context curation and learning loop design.}
-Several findings motivate explicit management of what a model attends to.
-Liu et al.~\cite{liu2024lost} show that language models disproportionately
-attend to information at the beginning and end of their context window,
-with retrieval accuracy degrading for middle-positioned facts.
-CODEFILTER~\cite{li2025codefilter} demonstrates a complementary result in
-code completion: only 15\% of retrieved cross-file chunks positively
-contribute, while 5.6\% actively degrade performance---filtering to
-positive-impact chunks consistently outperforms providing all retrieved
-context.  Together, these results establish that curating what a model
-sees can be more effective than maximizing the information available to it.
-Orthogonally, Nie et al.~\cite{nie2026learningloop} systematically study
-design decisions within iterative generative
-optimization---initialization, credit horizon, and experience
-batching---finding that these choices are task-dependent and rarely made
-explicit.  Our progressive and bandit policies operationalize both
-insights at two granularities: the iteration-level strategy manages the
-historical scope of the evidence workspace, while the file-level bandit
-prioritizes files inside that workspace using delayed utility estimates.
-
-\paragraph{LLM agents as optimization targets and technical foundations.}
-Modern LLM agents---MemGPT~\cite{packer2023memgpt} with virtual memory
-hierarchies, Reflexion~\cite{shinn2023reflexion} with verbal
-self-reflection, Voyager~\cite{wang2023voyager} with growing skill
-libraries, and SWE-agent~\cite{yang2024sweagent} with agent--computer
-interfaces---are the \emph{targets} of harness optimization rather than
-competitors: our benchmarks evaluate optimized versions of MemGPT-style
-memory harnesses (LoCoMo, LongMemEval) and SWE-agent-style coding
-harnesses (SWE-bench Verified).  On the algorithmic side, our bandit
-policy builds on UCB1~\cite{auer2002ucb}, adapting the
-exploration--exploitation trade-off to file selection: each workspace
-file is an arm, the reward signal is a rolling $z$-score of harness
-performance, and a Beta-smoothed prior prevents premature convergence.
-More broadly, our work can be viewed as an instance of
-AutoML~\cite{he2021automl} applied to LLM agent harnesses, distinguished
-by a search space defined by natural-language code edits rather than a
-fixed configuration grammar, and an LLM proposer whose own attention is
-a resource to be managed.
+\paragraph{Context curation in iterative optimization.}
+Our motivation aligns with evidence that more context is not always better.
+Liu et al.~\cite{liu2024lost} show that models use long contexts unevenly;
+CODEFILTER~\cite{li2025codefilter} demonstrates that filtering retrieved code
+context can outperform passing all retrieved chunks. Nie et
+al.~\cite{nie2026learningloop} further show that iterative generative
+optimization is sensitive to design choices such as credit horizon and
+experience batching. \name carries these ideas into automated harness
+optimization by treating proposer attention as an online control variable: a
+progressive iteration policy manages history scope, and delayed utility
+estimates manage file emphasis.

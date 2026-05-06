@@ -1,28 +1,31 @@
-Automated harness optimization improves the code that wraps a language model
+Automated harness optimization refines the code that wraps a language model
 into an agent through an iterative propose--evaluate loop. Recent systems such
 as Meta-Harness replace compressed textual feedback with a coding agent that
-can inspect the full filesystem history of prior candidates. This gives the
-proposer access to raw code, traces, and diffs, but full access is not
-necessarily useful access. As the optimization horizon grows, the expanding
-history can dilute the proposer's attention and force it to rediscover which
-past runs and files matter for the next edit. We formulate this bottleneck as
-an \emph{online context curation} problem: before each proposal, the optimizer
-must choose which prior iterations, trace detail, and workspace files should be
-made salient under a limited inspection budget. We introduce \name, a framework
-that treats this choice as a control variable in automated harness
-optimization. \name combines two composable curation strategies. The
-iteration-level strategy bounds and labels historical evidence, beginning with
-narrow best/worst references and expanding when optimization stalls. This
-strategy alone improves held-out performance in the main comparisons. The
-file-level strategy can be added to assign delayed credit to files read by the
-proposer and to prioritize files whose inspection has correlated with
-productive edits. The two strategies are not independent additive components:
-both route the same bounded proposer attention, but at different granularities.
-Across three benchmarks spanning software engineering and long-horizon memory,
-\name improves over the uncurated full-context baseline in most (benchmark,
-proposer) settings and introduces lower-cost operating points on the
-cost--quality frontier. On SWE-bench Verified, the strongest curated harness
-raises full-set passrate from 0.440 to 0.640 over the source harness. These
-results suggest that proposer context, usually treated as a static prompt
-artifact, is itself an online optimization variable that shapes harness
-search efficiency.
+inspects the full filesystem history of prior candidates, exposing raw code,
+traces, and diffs to the proposer. Full access, however, is not effective
+access. As the optimization horizon grows, the accumulated history dilutes
+the proposer's attention and forces it to rediscover which past runs and
+files matter for the next edit. In our traces, expanding the exposed
+workspace multiplies the number of available files, yet the proposer still
+opens only a small, nearly fixed number per iteration. We cast this
+bottleneck as an \emph{online context curation} problem: before each
+proposal, the optimizer must decide which prior iterations, trace details,
+and workspace files to make salient under a limited inspection budget. We
+introduce \name, a framework that treats this decision as a control variable
+in automated harness optimization. \name combines two composable curation
+strategies. An iteration-level strategy bounds and labels historical
+evidence: it begins with narrow best/worst references and widens exposure
+when optimization stalls. This strategy alone improves mean held-out
+performance across our memory comparisons. A file-level strategy then layers
+on top: it assigns delayed credit to files read by the proposer and
+prioritizes those whose inspection correlates with productive edits. The two strategies are
+not independent additive components. Both route the same bounded proposer
+attention, only at different granularities. Across three benchmarks spanning
+software engineering and long-horizon memory, \name improves over the
+uncurated full-context baseline in most (benchmark, proposer) settings. On
+the two memory benchmarks it opens lower-cost operating points on the
+cost--quality frontier; on SWE-bench Verified it instead trades a modest
+cost increase for a much stronger harness, raising full-set passrate from
+0.440 to 0.640 over the source harness. These results indicate that
+proposer context, usually treated as a static prompt artifact, is itself an
+online optimization variable that shapes harness search efficiency.
