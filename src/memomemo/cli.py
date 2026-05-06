@@ -254,11 +254,12 @@ def main() -> int:
     )
     optimize.add_argument(
         "--selection-policy",
-        choices=("default", "progressive", "bandit"),
+        choices=("default", "progressive", "bandit", "random", "recent", "best"),
         default="default",
         help=(
             "Use fixed-high scoped context (default), adaptive progressive "
-            "context loading, or online bandit context selection."
+            "context loading, online bandit context selection, or one of the "
+            "fixed 3-iteration file-access baselines (random / recent / best)."
         ),
     )
     optimize.add_argument(

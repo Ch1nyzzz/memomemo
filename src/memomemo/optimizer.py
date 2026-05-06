@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
+import random
 import re
 import shutil
 import subprocess
@@ -140,7 +142,7 @@ class LocomoOptimizer:
 
     def _validate_proposer_sandbox_policy(self) -> None:
         policy = self.config.selection_policy.strip().lower()
-        if policy not in {"progressive", "bandit"}:
+        if policy not in {"progressive", "bandit", "random", "recent", "best"}:
             return
         sandbox = self.config.proposer_sandbox.strip().lower()
         if sandbox != "docker":
@@ -222,6 +224,8 @@ class LocomoOptimizer:
                 budget = str(bandit_policy.get("budget") or "low")
             elif self.config.selection_policy == "progressive":
                 budget = forced_budget or self._progressive_budget_for_iteration(iteration)
+            elif self.config.selection_policy in {"random", "recent", "best"}:
+                budget = forced_budget or "medium"
             else:
                 budget = forced_budget or "high"
             evaluated = self._run_progressive_proposer_iteration(
@@ -229,7 +233,8 @@ class LocomoOptimizer:
                 candidates,
                 examples,
                 budget=budget,
-                adaptive=self.config.selection_policy in {"progressive", "bandit"},
+                adaptive=self.config.selection_policy
+                in {"progressive", "bandit", "random", "recent", "best"},
                 selection_policy=self.config.selection_policy,
                 bandit_policy=bandit_policy,
             )
@@ -1870,6 +1875,39 @@ class LocomoOptimizer:
                 break
         return tuple(out)
 
+    def _recent_reference_iterations(self, available: set[int]) -> tuple[int, ...]:
+        return tuple(sorted(available)[-3:])
+
+    def _random_reference_iterations(
+        self,
+        available: set[int],
+        *,
+        iteration: int,
+    ) -> tuple[int, ...]:
+        ordered = sorted(available)
+        if len(ordered) <= 3:
+            return tuple(ordered)
+        seed_material = f"{self.config.run_id}:{iteration}:random".encode("utf-8")
+        seed = int.from_bytes(hashlib.sha256(seed_material).digest()[:8], "big")
+        return tuple(sorted(random.Random(seed).sample(ordered, k=3)))
+
+    def _best_reference_iterations(
+        self,
+        available: set[int],
+        candidates: list[CandidateResult],
+    ) -> tuple[int, ...]:
+        out: list[int] = []
+        seen: set[int] = set()
+        for candidate in sorted(candidates, key=_candidate_best_rank):
+            iteration = _candidate_iteration(candidate.candidate_id)
+            if iteration is None or iteration not in available or iteration in seen:
+                continue
+            seen.add(iteration)
+            out.append(iteration)
+            if len(out) >= 3:
+                break
+        return tuple(sorted(out))
+
     def _update_bandit_state(
         self,
         *,
@@ -2191,6 +2229,12 @@ class LocomoOptimizer:
             for item in self._candidate_iterations(candidates)
             if 0 < item < iteration and self._iteration_dir(item).exists()
         }
+        if self.config.selection_policy == "recent":
+            return self._recent_reference_iterations(available)
+        if self.config.selection_policy == "random":
+            return self._random_reference_iterations(available, iteration=iteration)
+        if self.config.selection_policy == "best":
+            return self._best_reference_iterations(available, candidates)
         if budget == "high":
             return tuple(sorted(available))
 

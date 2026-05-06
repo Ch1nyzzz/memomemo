@@ -116,6 +116,48 @@ def test_default_prompt_uses_neutral_context_description():
     assert "Cumulative summaries may mention iterations whose raw\n  bundles are not present here" in prompt
 
 
+def test_random_recent_prompt_describes_baseline_reference_policy():
+    common = {
+        "run_id": "r",
+        "iteration": 5,
+        "run_dir": Path("runs/r/proposer_calls/iter_005/workspace"),
+        "pending_eval_path": Path("runs/r/proposer_calls/iter_005/workspace/pending_eval.json"),
+        "summaries_dir": Path("runs/r/proposer_calls/iter_005/workspace/summaries"),
+        "reference_iterations_dir": Path(
+            "runs/r/proposer_calls/iter_005/workspace/reference_iterations"
+        ),
+        "generated_dir": Path("runs/r/proposer_calls/iter_005/workspace/generated"),
+        "source_snapshot_dir": Path("runs/r/proposer_calls/iter_005/workspace/source_snapshot"),
+        "budget": "medium",
+        "reference_iterations": (2, 3, 4),
+        "target_system": "memgpt",
+        "optimization_directions": (),
+        "split": "train",
+        "limit": 0,
+    }
+
+    random_prompt = build_progressive_proposer_prompt(
+        **common,
+        selection_policy="random",
+    )
+    recent_prompt = build_progressive_proposer_prompt(
+        **common,
+        selection_policy="recent",
+    )
+
+    assert "random sample of up to 3 previous" in random_prompt
+    assert "most recent up to 3 previous" in recent_prompt
+    assert "best iteration" not in random_prompt
+    assert "worst iteration" not in recent_prompt
+
+    best_prompt = build_progressive_proposer_prompt(
+        **common,
+        selection_policy="best",
+    )
+    assert "top-3 previous raw iterations by train passrate" in best_prompt
+    assert "no worst iteration is exposed" in best_prompt
+
+
 def test_miniswe_prompt_uses_coding_agent_schema_and_focus():
     cells = get_target_cells("mini_swe_agent_source")
     directions = tuple(
