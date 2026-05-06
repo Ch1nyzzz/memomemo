@@ -5,19 +5,16 @@ All numbers are pulled verbatim from
     docs/experiment_detail.md
 of the MemoMemo repo (see paper README for the docs commit pinned).
 
-Two figures, each defending one experimental claim of Experiments.tex:
+Two active figures, each defending one experimental claim of Experiments.tex:
+
+    optimization_effect.{pdf,svg}
+        Grouped bars of held-out passrate gain relative to full-context.
 
     pareto_cost_quality.{pdf,svg}
         Single-panel scatter of (delta cost %, delta test pp) versus
         the default-family baseline. Each marker = one (benchmark,
         proposer, policy) triple, taken from the single best-by-test
         retained run in that cell. Default sits at the origin.
-
-    read_concentration.{pdf,svg}
-        Single-panel grouped bar of reads per available reference-iter
-        slot, with bandit best/worst/other and default+direction
-        recent/middle/early shown on a shared Y axis. Three retained
-        runs per policy collapsed to mean +/- range.
 """
 
 from __future__ import annotations
@@ -55,6 +52,84 @@ C_PROGRESSIVE = "#D55E00"     # vermilion for iter-axis only
 C_BANDIT      = "#0072B2"     # blue for iter+file (CuraHarness)
 C_RECENT      = "#56B4E9"     # sky for default+direction recency bucket
 C_PAREGION    = "#e8f4ea"     # very pale green wash for Pareto-favorable region
+
+
+# ============================================================================
+# Figure 0: Optimization effect, grouped bars
+# ============================================================================
+def fig_optimization_effect():
+    """Grouped bar chart of held-out passrate gain over full-context."""
+    cells = [
+        "LoCoMo\n/kimi",
+        "LoCoMo\n/codex",
+        "LongMem\n/kimi",
+        "LongMem\n/codex",
+        "SWE\n/kimi",
+    ]
+    progressive = np.array([+3.1, +4.8, -1.0, +2.0, +16.2])
+    cura = np.array([+2.0, +4.7, +1.5, -3.5, +18.2])
+
+    xs = np.arange(len(cells))
+    width = 0.36
+    fig, ax = plt.subplots(figsize=(5.8, 3.2))
+
+    bars_p = ax.bar(
+        xs - width / 2,
+        progressive,
+        width,
+        color=C_PROGRESSIVE,
+        edgecolor="black",
+        linewidth=0.5,
+        label="Progressive",
+    )
+    bars_c = ax.bar(
+        xs + width / 2,
+        cura,
+        width,
+        color=C_BANDIT,
+        edgecolor="black",
+        linewidth=0.5,
+        label="CuraHarness",
+    )
+
+    ax.axhline(0, color="grey", lw=0.7, ls="--", alpha=0.7)
+    ax.set_xticks(xs)
+    ax.set_xticklabels(cells)
+    ax.set_ylabel(r"$\Delta$ best test passrate vs full-context (pp)")
+    ax.set_ylim(-5.5, 21)
+    ax.grid(True, axis="y", ls=":", lw=0.4, color="grey", alpha=0.45)
+    ax.set_axisbelow(True)
+    ax.legend(loc="upper left", ncol=1)
+
+    for bars in (bars_p, bars_c):
+        for bar in bars:
+            value = bar.get_height()
+            va = "bottom" if value >= 0 else "top"
+            dy = 0.45 if value >= 0 else -0.45
+            ax.text(
+                bar.get_x() + bar.get_width() / 2,
+                value + dy,
+                f"{value:+.1f}",
+                ha="center",
+                va=va,
+                fontsize=6.8,
+            )
+
+    ax.text(
+        4,
+        20.1,
+        "single 20-iter\nSWE run",
+        ha="center",
+        va="top",
+        fontsize=6.6,
+        color="#444444",
+        style="italic",
+    )
+
+    fig.tight_layout()
+    fig.savefig("optimization_effect.pdf", bbox_inches="tight")
+    fig.savefig("optimization_effect.svg", bbox_inches="tight")
+    plt.close(fig)
 
 
 # ============================================================================
@@ -305,6 +380,6 @@ def fig_read_concentration():
 
 
 if __name__ == "__main__":
+    fig_optimization_effect()
     fig_pareto()
-    fig_read_concentration()
-    print("Generated: pareto_cost_quality.{pdf,svg}, read_concentration.{pdf,svg}")
+    print("Generated: optimization_effect.{pdf,svg}, pareto_cost_quality.{pdf,svg}")

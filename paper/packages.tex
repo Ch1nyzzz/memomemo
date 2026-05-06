@@ -4,8 +4,7 @@
 
 % ======== 数学 ========
 \usepackage{amsmath, amssymb, amsthm, mathtools, mathrsfs}
-\usepackage{dsfont}             % \mathds{R} 等
-% 注意：删掉 bbold，与 dsfont 重复
+% \usepackage{dsfont}           % Unused; omitted to avoid extra TeX dependency.
 
 % ======== 图表 ========
 \usepackage{graphicx}
@@ -16,7 +15,7 @@
 \usepackage{array, multirow}
 \usepackage{tabularx, xltabular}
 \usepackage{makecell}
-\usepackage{nicematrix}
+% \usepackage{nicematrix}       % Unused; omitted to avoid extra TeX dependency.
 
 % ======== TikZ / 绘图 ========
 \usepackage{tikz}
@@ -24,8 +23,7 @@
 \pgfplotsset{compat=1.18}   % 建议显式设置版本
 
 % ======== 算法 ========
-\usepackage{algorithm}
-\usepackage{algpseudocodex}
+% Avoid optional algorithm packages; pseudocode is typeset with standard boxes.
 
 % ======== 列表与排版 ========
 \usepackage{microtype}

@@ -92,6 +92,9 @@ class OptimizerConfig:
     force_budget: str = ""
     progressive_target_system: str = "memgpt"
     progressive_initial_low_iterations: int = 5
+    progressive_low_best_count: int = 1
+    progressive_medium_best_count: int = 3
+    progressive_include_worst: bool = True
     bandit_prior_weight: float = 0.4
     bandit_prior_alpha: float = 2.0
     bandit_exploration_c: float = 0.15
@@ -372,6 +375,13 @@ class LocomoOptimizer:
                 bandit_policy=bandit_policy,
                 benchmark_name=self._benchmark_prompt_name(),
                 raw_data_policy=self._raw_data_policy_name(),
+                progressive_best_count=(
+                    self.config.progressive_medium_best_count
+                    if budget == "medium"
+                    else self.config.progressive_low_best_count
+                    if budget == "low"
+                    else None
+                ),
             )
             if retry_note:
                 prompt = f"{prompt}\n\n{retry_note}"
@@ -2238,11 +2248,16 @@ class LocomoOptimizer:
         if budget == "high":
             return tuple(sorted(available))
 
+        if budget == "medium":
+            best_k = self.config.progressive_medium_best_count
+        else:
+            best_k = self.config.progressive_low_best_count
         selected: list[int] = []
-        selected.extend(self._best_iterations(candidates, k=3 if budget == "medium" else 1))
-        worst = self._worst_iteration(candidates)
-        if worst is not None:
-            selected.append(worst)
+        selected.extend(self._best_iterations(candidates, k=best_k))
+        if self.config.progressive_include_worst:
+            worst = self._worst_iteration(candidates)
+            if worst is not None:
+                selected.append(worst)
         out: list[int] = []
         seen: set[int] = set()
         for item in selected:

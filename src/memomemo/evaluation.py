@@ -246,37 +246,53 @@ class EvaluationRunner:
         build_cache: dict[str, _CachedState] | None = None,
     ) -> TaskResult:
         cached = (build_cache or {}).get(example.sample_id)
-        if cached is None:
-            run = scaffold.run(
-                example,
-                self.client,
-                config,
-                max_context_chars=self.max_context_chars,
-                dry_run=self.dry_run,
-            )
-        else:
-            with cached.lock:
-                run = scaffold.answer(
-                    cached.state,
+        try:
+            if cached is None:
+                run = scaffold.run(
                     example,
                     self.client,
                     config,
                     max_context_chars=self.max_context_chars,
                     dry_run=self.dry_run,
                 )
-        score_result = self.score_run(example, run)
-        return TaskResult(
-            task_id=example.task_id,
-            question=example.question,
-            gold_answer=example.answer,
-            prediction=run.prediction,
-            score=score_result.score,
-            passed=score_result.passed,
-            prompt_tokens=run.prompt_tokens,
-            completion_tokens=run.completion_tokens,
-            retrieved=[asdict(hit) for hit in run.retrieved],
-            metadata=dict(score_result.metadata or {}),
-        )
+            else:
+                with cached.lock:
+                    run = scaffold.answer(
+                        cached.state,
+                        example,
+                        self.client,
+                        config,
+                        max_context_chars=self.max_context_chars,
+                        dry_run=self.dry_run,
+                    )
+            score_result = self.score_run(example, run)
+            return TaskResult(
+                task_id=example.task_id,
+                question=example.question,
+                gold_answer=example.answer,
+                prediction=run.prediction,
+                score=score_result.score,
+                passed=score_result.passed,
+                prompt_tokens=run.prompt_tokens,
+                completion_tokens=run.completion_tokens,
+                retrieved=[asdict(hit) for hit in run.retrieved],
+                metadata=dict(score_result.metadata or {}),
+            )
+        except Exception as exc:  # noqa: BLE001 - candidate code can raise anything
+            return TaskResult(
+                task_id=example.task_id,
+                question=example.question,
+                gold_answer=example.answer,
+                prediction="",
+                score=0.0,
+                passed=False,
+                prompt_tokens=0,
+                completion_tokens=0,
+                retrieved=[],
+                metadata={
+                    "evaluation_error": f"{type(exc).__name__}: {exc}",
+                },
+            )
 
 
 def _default_score_run(example: LocomoExample, run: ScaffoldRun) -> ScoreResult:
