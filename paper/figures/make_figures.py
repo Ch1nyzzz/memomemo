@@ -764,72 +764,85 @@ def _load_budgets(run_dir):
     return out
 
 
-BUDGET_COLOR = {
-    "low":    "#cfe3f0",
-    "medium": "#7fa9c7",
-    "high":   "#2c5e88",
-}
+# Marker shape encodes the bandit budget at the breakthrough iter.
+BUDGET_MARKER = {"low": "*", "medium": "s", "high": "o"}
+BUDGET_SIZE   = {"low": 130, "medium": 60, "high": 50}
 
 
 def fig_optimization_curve():
     """LongMemEval / claudekimi: train passrate vs proposer iteration.
 
     Best-so-far train passrate, one run per policy (best-by-train among
-    retained runs). A budget strip at the top shows the CuraHarness-Full
-    bandit's per-iter budget (low / medium / high).
+    retained runs). At each breakthrough we drop a marker shaped by the
+    proposer's budget at that iter: star=low, square=medium, dot=high.
+    Full-context has no budget controller, so its breakthroughs are
+    plain X markers. Both CuraHarness-Iter (fixed-schedule progressive)
+    and CuraHarness-Full (bandit) have their own budget trajectories.
     """
     fig, ax = plt.subplots(figsize=(6.6, 4.0))
 
-    final_max = 0.0
+    # Cache budget per iter for the two cura policies (Full-context has none).
+    budgets_by_label = {}
+    for label, run_dir in OPTCURVE_RUNS:
+        if label == "Full-context":
+            continue
+        budgets_by_label[label] = _load_budgets(run_dir)
+
     for label, run_dir in OPTCURVE_RUNS:
         iters, raw = _load_passrates(run_dir)
         best, cur = [], -1.0
-        for v in raw:
+        bk_idx = []
+        for i, v in enumerate(raw):
             if v > cur:
                 cur = v
+                bk_idx.append(i)
             best.append(cur)
         color = OPTCURVE_COLOR[label]
         ax.plot(iters, best, color=color, lw=2.0, label=label, zorder=3)
-        bi = best.index(max(best))
-        ax.scatter([iters[bi]], [max(best)],
-                   marker="o", s=32, color=color, edgecolor="black",
-                   linewidths=0.6, zorder=4)
-        final_max = max(final_max, max(best))
 
-    # Budget strip for the CuraHarness-Full run, drawn just above the curves.
-    bandit_dir = next(rd for lab, rd in OPTCURVE_RUNS if lab == "CuraHarness-Full")
-    budgets = _load_budgets(bandit_dir)
-    strip_y_lo = final_max + 0.04
-    strip_h    = 0.025
-    for it, b in budgets.items():
-        ax.add_patch(Rectangle((it - 0.5, strip_y_lo), 1.0, strip_h,
-                               facecolor=BUDGET_COLOR[b], edgecolor="none",
-                               zorder=5, clip_on=False))
-    ax.text(-0.4, strip_y_lo + strip_h / 2,
-            "CuraHarness-Full\nbudget",
-            fontsize=7.5, color="#444444", va="center", ha="right")
+        if label == "Full-context":
+            for i in bk_idx:
+                ax.scatter([iters[i]], [best[i]], marker="X", s=42,
+                           color=color, edgecolor="black", linewidths=0.5,
+                           zorder=5)
+        else:
+            bmap = budgets_by_label[label]
+            for i in bk_idx:
+                it = iters[i]
+                b = bmap.get(it)
+                if b is None:
+                    continue
+                ax.scatter([it], [best[i]], marker=BUDGET_MARKER[b],
+                           s=BUDGET_SIZE[b], color=color,
+                           edgecolor="black", linewidths=0.6, zorder=5)
 
-    # Axis frame
     ax.set_xlabel("Proposer iteration", fontsize=11)
     ax.set_ylabel("Train passrate (best-so-far)", fontsize=11)
     ax.set_xlim(-0.5, 30.5)
-    ax.set_ylim(0.10, strip_y_lo + strip_h + 0.01)
+    ax.set_ylim(0.10, 0.70)
     ax.tick_params(axis="both", labelsize=9.5, length=2.5)
     ax.grid(True, ls=":", lw=0.4, color="grey", alpha=0.45)
     ax.set_axisbelow(True)
 
-    # Two legends: policies (lower right) + budget swatches (upper left).
     pol_leg = ax.legend(loc="lower right", fontsize=9.5,
                          frameon=True, framealpha=0.9, edgecolor="0.8",
                          handletextpad=0.6, labelspacing=0.3, borderpad=0.4)
     ax.add_artist(pol_leg)
-    budget_handles = [Patch(facecolor=BUDGET_COLOR[b], edgecolor="none",
-                             label=b)
-                      for b in ("low", "medium", "high")]
-    ax.legend(handles=budget_handles, title="budget", loc="upper left",
-              fontsize=8.5, title_fontsize=8.5,
+    budget_handles = [
+        Line2D([0], [0], marker=BUDGET_MARKER["low"], color="w",
+               markerfacecolor="0.55", markeredgecolor="black",
+               markersize=12, label="low"),
+        Line2D([0], [0], marker=BUDGET_MARKER["medium"], color="w",
+               markerfacecolor="0.55", markeredgecolor="black",
+               markersize=8, label="medium"),
+        Line2D([0], [0], marker=BUDGET_MARKER["high"], color="w",
+               markerfacecolor="0.55", markeredgecolor="black",
+               markersize=8, label="high"),
+    ]
+    ax.legend(handles=budget_handles, title="budget at breakthrough",
+              loc="upper left", fontsize=8.5, title_fontsize=8.5,
               frameon=True, framealpha=0.9, edgecolor="0.8",
-              handletextpad=0.5, labelspacing=0.25, borderpad=0.4)
+              handletextpad=0.5, labelspacing=0.3, borderpad=0.4)
 
     fig.tight_layout()
     fig.savefig("optimization_curve.pdf", bbox_inches="tight")
