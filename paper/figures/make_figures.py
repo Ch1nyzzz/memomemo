@@ -277,20 +277,17 @@ def _panel(ax, rows, xlim, ylim, title, show_ylabel,
            label_each_point=False, draw_frontier=True,
            frontier_per_bench=True, pareto_label_pos="top-left"):
     _draw_frame(ax, xlim, ylim, pareto_label_pos=pareto_label_pos)
-    by_bench = {}
+    by_cell = {}  # frontier per (bench, proposer) cell
     for bench, prop, policy, dx, dy in rows:
         lab = BENCH_TAG[bench] if label_each_point else None
         _draw_point(ax, dx, dy,
                     color=POLICY_COLOR[policy],
                     marker=PROP_MARKER[prop],
                     label=lab)
-        by_bench.setdefault(bench, []).append((dx, dy))
+        by_cell.setdefault((bench, prop), []).append((dx, dy))
     if draw_frontier:
-        if frontier_per_bench:
-            for _bench, xy in by_bench.items():
-                _draw_frontier(ax, xy)
-        else:
-            _draw_frontier(ax, [p for xy in by_bench.values() for p in xy])
+        for _key, xy in by_cell.items():
+            _draw_frontier(ax, xy)
     _draw_origin(ax)
     ax.set_xlim(*xlim)
     ax.set_ylim(*ylim)
