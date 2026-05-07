@@ -723,13 +723,13 @@ def fig_attention_heatmap():
 OPTCURVE_RUNS = [
     ("Full-context",
      "/data/home/yuhan/MemoMemo/runs/"
-     "locomo_memgpt_codex54_default_codexlogin_autobudget_docker_iter30_train80_r1_20260504_163640"),
+     "longmemeval_memgpt_claudekimi_default_direction_docker_iter30_train100_20260502_015454"),
     ("CuraHarness-Iter",
      "/data/home/yuhan/MemoMemo/runs/"
-     "locomo_memgpt_codex54_progressive_codexlogin_autobudget_docker_iter30_train80_r1_20260504_163640"),
+     "longmemeval_memgpt_claudekimi_progressive_autobudget_docker_iter30_train100_r1_20260504_162844"),
     ("CuraHarness-Full",
-     "/helios-storage/helios4-data/yuhan/MemoMemo/runs/"
-     "locomo_memory_opt_memgpt_codex54_bandit_v2_iter30_full80seed_20260428_0213"),
+     "/data/home/yuhan/MemoMemo/runs/"
+     "longmemeval_memgpt_claudekimi_bandit_v3_banditfix_autobudget_docker_iter30_train100_w16_r1_20260505_003416"),
 ]
 
 OPTCURVE_COLOR = {
