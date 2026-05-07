@@ -215,22 +215,10 @@ def _draw_frame(ax, xlim, ylim, show_quadrant_labels=True,
         pad_x = 0.02 * (x1 - x0)
         pad_y = 0.03 * (y1 - y0)
         if x0 < 0:
-            if pareto_label_pos == "bottom-left":
-                # Inside the Pareto-improving (upper-left) region but at its
-                # bottom edge so it sits above y=0 yet below the Stage legend.
-                ax.text(x0 + pad_x, 0 + pad_y, "Pareto-improving region",
-                        ha="left", va="bottom",
-                        fontsize=9.5, color="#3d6f4d", style="italic",
-                        alpha=0.85)
-            else:
-                ax.text(x0 + pad_x, y1 - pad_y, "Pareto-improving",
-                        ha="left", va="top",
-                        fontsize=9.5, color="#3d6f4d", style="italic",
-                        alpha=0.85)
-        if x1 > 0:
-            ax.text(x1 - pad_x, y1 - pad_y, "Quality--cost trade-off",
-                    ha="right", va="top",
-                    fontsize=9.5, color="#7a5a18", style="italic", alpha=0.75)
+            ax.text(x0 + pad_x, y1 - pad_y, "Pareto-improving",
+                    ha="left", va="top",
+                    fontsize=13.5, color="#1f5530", style="italic",
+                    weight="bold", alpha=1.0, zorder=5)
 
 
 def _draw_point(ax, dx, dy, color, marker, label=None):
@@ -315,6 +303,9 @@ def _stage_legend_handles():
 
 
 def _marker_legend_handles():
+    # Drop the full-context entry: the X at the origin is already self-evident
+    # and removing it keeps the in-axes legend compact enough to avoid
+    # occluding nearby data points.
     return [
         Line2D([0], [0], marker="o", color="w",
                markerfacecolor="lightgrey", markeredgecolor="black",
@@ -322,9 +313,6 @@ def _marker_legend_handles():
         Line2D([0], [0], marker="s", color="w",
                markerfacecolor="lightgrey", markeredgecolor="black",
                markersize=9, label="codex"),
-        Line2D([0], [0], marker="X", color="w",
-               markerfacecolor=C_DEFAULT, markeredgecolor="black",
-               markersize=9, label="full-context"),
     ]
 
 
@@ -348,7 +336,7 @@ def fig_pareto_two_panel():
     swe_rows = [r for r in PARETO_POINTS if r[0] == "SWE-bench"]
 
     _panel(axes[0], mem_rows,
-           xlim=(-55, 6), ylim=(-6, 8),
+           xlim=(-55, 6), ylim=(-6, 11),
            title="(a) Memory benchmarks",
            show_ylabel=True, label_each_point=True,
            draw_frontier=True, frontier_per_bench=True,
@@ -359,21 +347,35 @@ def fig_pareto_two_panel():
            show_ylabel=False, label_each_point=False,
            draw_frontier=True, frontier_per_bench=True)
 
-    # Stage legend: upper-left of memory panel; lower-right of SWE panel
-    # (memory's upper-left is empty space; SWE's upper-left is where the
-    # Stage 2 point sits, so the legend goes to the lower-right corner).
-    _add_in_axes_stage_legend(axes[0], loc="upper left",
-                              bbox=(0.012, 0.985))
+    # Memory panel: stack Stage + Marker legends below the
+    # "Pareto-improving" label in the upper-left. Kept compact so that no
+    # data point is occluded.
+    leg_stage = axes[0].legend(handles=_stage_legend_handles(),
+                               loc="upper left",
+                               bbox_to_anchor=(0.012, 0.88),
+                               title="Stage", title_fontsize=10,
+                               fontsize=9.5, frameon=True, framealpha=0.9,
+                               edgecolor="0.7", borderaxespad=0,
+                               handletextpad=0.6,
+                               labelspacing=0.3, borderpad=0.4)
+    leg_stage.set_zorder(6)
+    axes[0].add_artist(leg_stage)
+    leg_marker = axes[0].legend(handles=_marker_legend_handles(),
+                                loc="upper left",
+                                bbox_to_anchor=(0.012, 0.70),
+                                title="Marker", title_fontsize=10,
+                                fontsize=9.5, frameon=True, framealpha=0.9,
+                                edgecolor="0.7", borderaxespad=0,
+                                handletextpad=0.6,
+                                labelspacing=0.3, borderpad=0.4)
+    leg_marker.set_zorder(6)
+    axes[0].add_artist(leg_marker)
+
+    # SWE panel: only kimi proposer, so just the Stage legend (lower-right).
     _add_in_axes_stage_legend(axes[1], loc="lower right",
                               bbox=(0.985, 0.015))
 
-    # Marker legend at the bottom of the figure.
-    fig.legend(handles=_marker_legend_handles(), loc="lower center",
-               bbox_to_anchor=(0.5, -0.04), ncol=3,
-               title="Marker", title_fontsize=10, fontsize=9.5,
-               frameon=False, borderaxespad=0)
-
-    fig.tight_layout(rect=[0, 0.04, 1, 1])
+    fig.tight_layout()
     fig.savefig("pareto_cost_quality.pdf", bbox_inches="tight")
     fig.savefig("pareto_cost_quality.svg", bbox_inches="tight")
     plt.close(fig)
