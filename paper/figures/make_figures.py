@@ -194,13 +194,14 @@ PARETO_POINTS = [
 PROP_MARKER = {"claudekimi": "o", "codex54": "s"}
 PROP_LABEL  = {"claudekimi": "kimi", "codex54": "codex"}
 POLICY_COLOR = {"Progressive": C_PROGRESSIVE, "Bandit": C_BANDIT}
-POLICY_LABEL = {"Progressive": "CuraHarness-Iter",
-                "Bandit":      "CuraHarness-Full"}
+POLICY_LABEL = {"Progressive": "Stage 1: CuraHarness-Iter",
+                "Bandit":      "Stage 2: CuraHarness-Full"}
 
 BENCH_TAG = {"LoCoMo": "Lo", "LongMemEval": "LME", "SWE-bench": "SWE"}
 
 
-def _draw_frame(ax, xlim, ylim, show_quadrant_labels=True):
+def _draw_frame(ax, xlim, ylim, show_quadrant_labels=True,
+                pareto_label_pos="top-left"):
     """Soft upper-left wash + zero axes; only two corner labels."""
     x0, x1 = xlim
     y0, y1 = ylim
@@ -214,29 +215,38 @@ def _draw_frame(ax, xlim, ylim, show_quadrant_labels=True):
         pad_x = 0.02 * (x1 - x0)
         pad_y = 0.03 * (y1 - y0)
         if x0 < 0:
-            ax.text(x0 + pad_x, y1 - pad_y, "Pareto-improving",
-                    ha="left", va="top",
-                    fontsize=6.5, color="#3d6f4d", style="italic", alpha=0.85)
+            if pareto_label_pos == "bottom-left":
+                # Inside the Pareto-improving (upper-left) region but at its
+                # bottom edge so it sits above y=0 yet below the Stage legend.
+                ax.text(x0 + pad_x, 0 + pad_y, "Pareto-improving region",
+                        ha="left", va="bottom",
+                        fontsize=9.5, color="#3d6f4d", style="italic",
+                        alpha=0.85)
+            else:
+                ax.text(x0 + pad_x, y1 - pad_y, "Pareto-improving",
+                        ha="left", va="top",
+                        fontsize=9.5, color="#3d6f4d", style="italic",
+                        alpha=0.85)
         if x1 > 0:
             ax.text(x1 - pad_x, y1 - pad_y, "Quality--cost trade-off",
                     ha="right", va="top",
-                    fontsize=6.5, color="#7a5a18", style="italic", alpha=0.75)
+                    fontsize=9.5, color="#7a5a18", style="italic", alpha=0.75)
 
 
 def _draw_point(ax, dx, dy, color, marker, label=None):
     """Light grey guide line from origin + the point."""
     ax.plot([0, dx], [0, dy], color="0.78", lw=0.7, alpha=0.7, zorder=1)
-    ax.scatter(dx, dy, marker=marker, s=58, color=color,
-               edgecolor="black", linewidths=0.55, zorder=4)
+    ax.scatter(dx, dy, marker=marker, s=85, color=color,
+               edgecolor="black", linewidths=0.6, zorder=4)
     if label is not None:
-        ax.annotate(label, xy=(dx, dy), xytext=(5, 4),
+        ax.annotate(label, xy=(dx, dy), xytext=(6, 5),
                     textcoords="offset points",
-                    fontsize=6.2, color="#444444")
+                    fontsize=8.5, color="#333333")
 
 
 def _draw_origin(ax):
-    ax.scatter(0, 0, marker="X", s=58, color=C_DEFAULT,
-               edgecolor="black", linewidths=0.55, zorder=5)
+    ax.scatter(0, 0, marker="X", s=85, color=C_DEFAULT,
+               edgecolor="black", linewidths=0.6, zorder=5)
 
 
 def _pareto_frontier(points):
@@ -264,82 +274,107 @@ def _draw_frontier(ax, xy_pairs):
 
 
 def _panel(ax, rows, xlim, ylim, title, show_ylabel,
-           label_each_point=False, draw_frontier=True):
-    _draw_frame(ax, xlim, ylim)
-    xy = []
+           label_each_point=False, draw_frontier=True,
+           frontier_per_bench=True, pareto_label_pos="top-left"):
+    _draw_frame(ax, xlim, ylim, pareto_label_pos=pareto_label_pos)
+    by_bench = {}
     for bench, prop, policy, dx, dy in rows:
         lab = BENCH_TAG[bench] if label_each_point else None
         _draw_point(ax, dx, dy,
                     color=POLICY_COLOR[policy],
                     marker=PROP_MARKER[prop],
                     label=lab)
-        xy.append((dx, dy))
+        by_bench.setdefault(bench, []).append((dx, dy))
     if draw_frontier:
-        _draw_frontier(ax, xy)
+        if frontier_per_bench:
+            for _bench, xy in by_bench.items():
+                _draw_frontier(ax, xy)
+        else:
+            _draw_frontier(ax, [p for xy in by_bench.values() for p in xy])
     _draw_origin(ax)
     ax.set_xlim(*xlim)
     ax.set_ylim(*ylim)
-    ax.set_xlabel(r"$\Delta$ tokens / propose vs full-context (%)")
+    ax.set_xlabel(r"$\Delta$ tokens / propose vs full-context (%)",
+                  fontsize=11)
     if show_ylabel:
-        ax.set_ylabel(r"$\Delta$ best test passrate (pp)")
-    ax.set_title(title, fontsize=9, pad=4)
-    ax.tick_params(axis="both", which="both", length=2.5)
+        ax.set_ylabel(r"$\Delta$ best test passrate (pp)", fontsize=11)
+    ax.set_title(title, fontsize=12, pad=5)
+    ax.tick_params(axis="both", which="both", length=3, labelsize=10)
     ax.grid(True, ls=":", lw=0.4, color="grey", alpha=0.3)
     ax.set_axisbelow(True)
 
 
-def _legend_handles():
-    policy_h = [
+def _stage_legend_handles():
+    return [
         Line2D([0], [0], marker="o", color="w",
                markerfacecolor=POLICY_COLOR["Progressive"],
-               markeredgecolor="black", markersize=7,
+               markeredgecolor="black", markersize=9,
                label=POLICY_LABEL["Progressive"]),
         Line2D([0], [0], marker="o", color="w",
                markerfacecolor=POLICY_COLOR["Bandit"],
-               markeredgecolor="black", markersize=7,
+               markeredgecolor="black", markersize=9,
                label=POLICY_LABEL["Bandit"]),
     ]
-    proposer_h = [
+
+
+def _marker_legend_handles():
+    return [
         Line2D([0], [0], marker="o", color="w",
                markerfacecolor="lightgrey", markeredgecolor="black",
-               markersize=7, label="kimi"),
+               markersize=9, label="kimi"),
         Line2D([0], [0], marker="s", color="w",
                markerfacecolor="lightgrey", markeredgecolor="black",
-               markersize=7, label="codex"),
+               markersize=9, label="codex"),
         Line2D([0], [0], marker="X", color="w",
                markerfacecolor=C_DEFAULT, markeredgecolor="black",
-               markersize=7, label="full-context"),
+               markersize=9, label="full-context"),
     ]
-    return policy_h, proposer_h
+
+
+def _add_in_axes_stage_legend(ax, loc="upper left",
+                              bbox=(0.012, 0.985)):
+    leg = ax.legend(handles=_stage_legend_handles(),
+                    loc=loc, bbox_to_anchor=bbox,
+                    title="Stage", title_fontsize=10, fontsize=9.5,
+                    frameon=True, framealpha=0.9, edgecolor="0.7",
+                    borderaxespad=0)
+    leg.set_zorder(6)
+    ax.add_artist(leg)
 
 
 def fig_pareto_two_panel():
     """Two-panel Pareto figure: (a) memory benchmarks, (b) SWE-bench."""
-    fig, axes = plt.subplots(1, 2, figsize=(8.6, 3.6),
+    fig, axes = plt.subplots(1, 2, figsize=(11.5, 4.6),
                              gridspec_kw=dict(width_ratios=[1.25, 1.0]))
 
     mem_rows = [r for r in PARETO_POINTS if r[0] in ("LoCoMo", "LongMemEval")]
     swe_rows = [r for r in PARETO_POINTS if r[0] == "SWE-bench"]
 
     _panel(axes[0], mem_rows,
-           xlim=(-52, 6), ylim=(-5.5, 7),
+           xlim=(-55, 6), ylim=(-6, 8),
            title="(a) Memory benchmarks",
-           show_ylabel=True, label_each_point=True, draw_frontier=True)
+           show_ylabel=True, label_each_point=True,
+           draw_frontier=True, frontier_per_bench=True,
+           pareto_label_pos="bottom-left")
     _panel(axes[1], swe_rows,
            xlim=(-4, 24), ylim=(-2, 22),
            title="(b) SWE-bench Verified",
-           show_ylabel=False, label_each_point=False, draw_frontier=True)
+           show_ylabel=False, label_each_point=False,
+           draw_frontier=True, frontier_per_bench=True)
 
-    policy_h, proposer_h = _legend_handles()
-    leg1 = fig.legend(handles=policy_h, loc="lower center",
-                      bbox_to_anchor=(0.32, -0.05), ncol=2,
-                      title="Policy", title_fontsize=8,
-                      fontsize=7.4, frameon=False, borderaxespad=0)
-    fig.add_artist(leg1)
-    fig.legend(handles=proposer_h, loc="lower center",
-               bbox_to_anchor=(0.74, -0.05), ncol=3,
-               title="Marker", title_fontsize=8,
-               fontsize=7.4, frameon=False, borderaxespad=0)
+    # Stage legend: upper-left of memory panel; lower-right of SWE panel
+    # (memory's upper-left is empty space; SWE's upper-left is where the
+    # Stage 2 point sits, so the legend goes to the lower-right corner).
+    _add_in_axes_stage_legend(axes[0], loc="upper left",
+                              bbox=(0.012, 0.985))
+    _add_in_axes_stage_legend(axes[1], loc="lower right",
+                              bbox=(0.985, 0.015))
+
+    # Marker legend at the bottom of the figure.
+    fig.legend(handles=_marker_legend_handles(), loc="lower center",
+               bbox_to_anchor=(0.5, -0.04), ncol=3,
+               title="Marker", title_fontsize=10, fontsize=9.5,
+               frameon=False, borderaxespad=0)
 
     fig.tight_layout(rect=[0, 0.04, 1, 1])
     fig.savefig("pareto_cost_quality.pdf", bbox_inches="tight")
@@ -348,26 +383,26 @@ def fig_pareto_two_panel():
 
 
 def fig_pareto_single():
-    """Compact single-panel version (slides / single column)."""
-    fig, ax = plt.subplots(figsize=(7.2, 4.0))
-    xlim = (-52, 24)
+    """Compact single-panel version (slides / single column).
+
+    Note: frontier is drawn per-benchmark to avoid mixing different
+    benchmarks' passrate scales.
+    """
+    fig, ax = plt.subplots(figsize=(8.4, 4.6))
+    xlim = (-55, 24)
     ylim = (-7, 22)
     _panel(ax, PARETO_POINTS, xlim=xlim, ylim=ylim,
            title="", show_ylabel=True,
-           label_each_point=True, draw_frontier=True)
+           label_each_point=True,
+           draw_frontier=True, frontier_per_bench=True)
 
-    policy_h, proposer_h = _legend_handles()
-    leg1 = ax.legend(handles=policy_h, loc="upper left",
-                     bbox_to_anchor=(1.01, 1.0),
-                     title="Policy", title_fontsize=8,
-                     fontsize=7.2, frameon=False, borderaxespad=0)
-    ax.add_artist(leg1)
-    ax.legend(handles=proposer_h, loc="upper left",
-              bbox_to_anchor=(1.01, 0.55),
-              title="Marker", title_fontsize=8,
-              fontsize=7.2, frameon=False, borderaxespad=0)
+    _add_in_axes_stage_legend(ax)
+    ax.legend(handles=_marker_legend_handles(), loc="upper left",
+              bbox_to_anchor=(1.02, 1.0),
+              title="Marker", title_fontsize=10, fontsize=9.5,
+              frameon=False, borderaxespad=0)
 
-    fig.tight_layout(rect=[0, 0, 0.78, 1])
+    fig.tight_layout(rect=[0, 0, 0.82, 1])
     fig.savefig("pareto_cost_quality_single.pdf", bbox_inches="tight")
     fig.savefig("pareto_cost_quality_single.svg", bbox_inches="tight")
     plt.close(fig)
