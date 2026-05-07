@@ -402,7 +402,7 @@ def fig_pareto_small():
     annot = {
         "Baseline":    ("Full-context",     (8, -4)),
         "Progressive": ("Stage 1",          (8,  4)),
-        "Bandit":      ("Stage 2",          (-8, -16)),
+        "Bandit":      ("Stage 2",          (-8,  6)),
     }
     for policy, (label, offset) in annot.items():
         x, y = pts[policy]
@@ -413,7 +413,7 @@ def fig_pareto_small():
                     fontsize=8.5, color="#222222", ha=ha,
                     linespacing=1.1)
 
-    ax.set_xlim(1.95, 3.65)
+    ax.set_xlim(1.5, 3.65)
     ax.set_ylim(0.31, 0.395)
     ax.set_xlabel("Tokens per propose (M)", fontsize=10.5)
     ax.set_ylabel("Best test passrate", fontsize=10.5)
@@ -421,12 +421,18 @@ def fig_pareto_small():
     ax.grid(True, ls=":", lw=0.4, color="grey", alpha=0.4)
     ax.set_axisbelow(True)
 
-    # Compact legend: stage marker shapes only.
-    leg = ax.legend(handles=_stage_legend_handles(),
+    # Compact legend: stage marker shapes only, with smaller markers.
+    small_handles = [
+        Line2D([0], [0], marker=POLICY_MARKER[p], color="w",
+               markerfacecolor="0.4", markeredgecolor="black",
+               markersize=6, label=POLICY_LABEL[p])
+        for p in ("Baseline", "Progressive", "Bandit")
+    ]
+    leg = ax.legend(handles=small_handles,
                     loc="lower right",
-                    fontsize=8.5,
+                    fontsize=8.0,
                     frameon=True, framealpha=0.9, edgecolor="0.7",
-                    handletextpad=0.6, labelspacing=0.3, borderpad=0.4)
+                    handletextpad=0.5, labelspacing=0.3, borderpad=0.4)
     leg.set_zorder(6)
 
     fig.tight_layout()
