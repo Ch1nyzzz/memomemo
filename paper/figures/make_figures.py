@@ -839,17 +839,19 @@ def fig_optimization_curve():
                markerfacecolor="0.55", markeredgecolor="black",
                markersize=8, label="high"),
     ]
-    pol_leg = ax.legend(handles=policy_handles,
-                        loc="lower right", bbox_to_anchor=(0.78, 0.02),
-                        fontsize=9.5, frameon=True, framealpha=0.9,
-                        edgecolor="0.8",
-                        handletextpad=0.6, labelspacing=0.3, borderpad=0.4)
-    ax.add_artist(pol_leg)
-    ax.legend(handles=budget_handles, title="budget at breakthrough",
-              loc="lower right", bbox_to_anchor=(1.0, 0.02),
-              fontsize=9.0, title_fontsize=9.0,
-              frameon=True, framealpha=0.9, edgecolor="0.8",
-              handletextpad=0.5, labelspacing=0.3, borderpad=0.4)
+    bud_leg = ax.legend(handles=budget_handles, title="budget at breakthrough",
+                        loc="lower right", bbox_to_anchor=(1.0, 0.02),
+                        fontsize=9.0, title_fontsize=9.0,
+                        frameon=True, framealpha=0.9, edgecolor="0.8",
+                        handletextpad=0.5, labelspacing=0.3, borderpad=0.4)
+    ax.add_artist(bud_leg)
+    fig.canvas.draw()
+    bud_bbox = bud_leg.get_window_extent().transformed(ax.transAxes.inverted())
+    pol_anchor_x = bud_bbox.x0 - 0.015
+    ax.legend(handles=policy_handles,
+              loc="lower right", bbox_to_anchor=(pol_anchor_x, 0.02),
+              fontsize=9.5, frameon=True, framealpha=0.9, edgecolor="0.8",
+              handletextpad=0.6, labelspacing=0.3, borderpad=0.4)
 
     fig.tight_layout()
     fig.savefig("optimization_curve.pdf", bbox_inches="tight")
