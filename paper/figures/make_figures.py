@@ -715,9 +715,90 @@ def fig_attention_heatmap():
     plt.close(fig)
 
 
+# ============================================================================
+# Figure 4: Optimization curve -- train passrate vs iter on LoCoMo / codex54
+# ============================================================================
+# Three best-by-test runs, one per policy. Iter 0 is the shared baseline
+# scaffold (memgpt_source_top12); iter >= 1 are proposer iterations.
+OPTCURVE_RUNS = [
+    ("Full-context",
+     "/data/home/yuhan/MemoMemo/runs/"
+     "locomo_memgpt_codex54_default_codexlogin_autobudget_docker_iter30_train80_r3_20260505_005403"),
+    ("CuraHarness-Iter",
+     "/data/home/yuhan/MemoMemo/runs/"
+     "locomo_memgpt_codex54_progressive_codexlogin_autobudget_docker_iter30_train80_r1_20260504_163640"),
+    ("CuraHarness-Full",
+     "/helios-storage/helios4-data/yuhan/MemoMemo/runs/"
+     "locomo_memory_opt_memgpt_codex54_bandit_v3_iter30_full80seed_w16_20260428_192739"),
+]
+
+OPTCURVE_COLOR = {
+    "Full-context":     "#BBBBBB",
+    "CuraHarness-Iter": "#EE8866",
+    "CuraHarness-Full": "#4477AA",
+}
+
+
+def _load_passrates(run_dir):
+    import json
+    from pathlib import Path
+    rows = json.loads(Path(run_dir, "candidate_score_table.json").read_text())
+    pairs = [(r["iteration"], r["passrate"]) for r in rows
+             if r.get("passrate") is not None]
+    pairs.sort(key=lambda p: p[0])
+    return [p[0] for p in pairs], [p[1] for p in pairs]
+
+
+def fig_optimization_curve():
+    """LoCoMo / codex54: train passrate vs proposer iteration.
+
+    For each policy we pick the best-by-test retained run (matches the
+    rows reported in Table~\\ref{tab:memory_main}). Solid line = best-so-far
+    train passrate (the natural optimization curve); thin line = raw
+    per-iter train passrate.
+    """
+    fig, ax = plt.subplots(figsize=(6.4, 3.8))
+
+    for label, run_dir in OPTCURVE_RUNS:
+        iters, raw = _load_passrates(run_dir)
+        best = []
+        cur = -1.0
+        for v in raw:
+            if v > cur:
+                cur = v
+            best.append(cur)
+        color = OPTCURVE_COLOR[label]
+        ax.plot(iters, raw, color=color, lw=0.8, alpha=0.45, zorder=2)
+        ax.plot(iters, best, color=color, lw=1.8, label=label, zorder=3)
+        ax.scatter([iters[best.index(max(best))]], [max(best)],
+                   marker="o", s=28, color=color, edgecolor="black",
+                   linewidths=0.6, zorder=4)
+
+    ax.axvline(0.5, color="grey", lw=0.5, ls=":", alpha=0.6)
+    ax.text(0.5, ax.get_ylim()[1], " proposer iters $\\to$",
+            fontsize=8.0, color="#555555", va="top", ha="left")
+
+    ax.set_xlabel("Proposer iteration", fontsize=11)
+    ax.set_ylabel("Train passrate", fontsize=11)
+    ax.set_xlim(-0.5, 30.5)
+    ax.tick_params(axis="both", labelsize=9.5, length=2.5)
+    ax.grid(True, ls=":", lw=0.4, color="grey", alpha=0.45)
+    ax.set_axisbelow(True)
+    ax.legend(loc="lower right", fontsize=9.5,
+              frameon=True, framealpha=0.9, edgecolor="0.8",
+              handletextpad=0.6, labelspacing=0.3, borderpad=0.4)
+
+    fig.tight_layout()
+    fig.savefig("optimization_curve.pdf", bbox_inches="tight")
+    fig.savefig("optimization_curve.svg", bbox_inches="tight")
+    plt.close(fig)
+
+
 if __name__ == "__main__":
     fig_optimization_effect()
     fig_pareto()
     fig_attention_heatmap()
+    fig_optimization_curve()
     print("Generated: optimization_effect.{pdf,svg}, "
-          "pareto_cost_quality.{pdf,svg}, attention_heatmap.{pdf,svg}")
+          "pareto_cost_quality.{pdf,svg}, attention_heatmap.{pdf,svg}, "
+          "optimization_curve.{pdf,svg}")
