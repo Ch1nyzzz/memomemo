@@ -576,104 +576,79 @@ def fig_attention_heatmap():
     vmax = max(g["recency"][0].max() for g in grids.values())
     vmax = max(vmax, max(g["absolute"][0].max() for g in grids.values()))
 
-    # 2 rows x 3 cols of (heatmap + marginal-bar) pairs.
+    # 1 row x 3 cols of (heatmap + marginal-bar) pairs.
     # Each "column" of the layout is two sub-columns: heatmap (wide) +
     # row-sum bar (narrow, sharey with heatmap).
-    fig = plt.figure(figsize=(12.6, 5.6))
+    fig = plt.figure(figsize=(13.5, 4.2))
     outer = fig.add_gridspec(
-        2, 3, hspace=0.45, wspace=0.28, left=0.06, right=0.93,
-        top=0.90, bottom=0.10,
+        1, 3, wspace=0.30, left=0.07, right=0.92,
+        top=0.86, bottom=0.18,
     )
 
     cmap = plt.get_cmap("YlOrRd").copy()
     cmap.set_under("#f5f5f5")
 
-    # global y-row-sum max per mode (to normalize marginal bars across stages)
-    rowsum_max = {"recency": 0, "absolute": 0}
-    for label in grids:
-        for mode in ("recency", "absolute"):
-            Z = grids[label][mode][0]
-            rowsum_max[mode] = max(rowsum_max[mode], Z.sum(axis=1).max())
+    rowsum_max = max(grids[label]["absolute"][0].sum(axis=1).max()
+                     for label in grids)
 
     panel_letters = ["A", "B", "C"]
     last_im = None
     for col, (label, _key) in enumerate(ATTENTION_RUNS):
-        for row, mode in enumerate(("recency", "absolute")):
-            inner = outer[row, col].subgridspec(
-                1, 2, width_ratios=[5, 1], wspace=0.05,
-            )
-            ax = fig.add_subplot(inner[0, 0])
-            ax_bar = fig.add_subplot(inner[0, 1], sharey=ax)
+        inner = outer[0, col].subgridspec(
+            1, 2, width_ratios=[5, 1], wspace=0.06,
+        )
+        ax = fig.add_subplot(inner[0, 0])
+        ax_bar = fig.add_subplot(inner[0, 1], sharey=ax)
 
-            Z, n_max, y_max, top1_xy, _best_xy, _worst_xy = grids[label][mode]
-            if mode == "recency":
-                y0, y1 = 1, min(y_max, n_max - 1)
-            else:
-                y0, y1 = 0, y_max
-            im = ax.imshow(
-                Z[y0:y1 + 1, 1:n_max + 1],
-                aspect="auto", origin="lower",
-                extent=(0.5, n_max + 0.5, y0 - 0.5, y1 + 0.5),
-                cmap=cmap, norm=LogNorm(vmin=0.5, vmax=max(vmax, 1)),
-            )
-            last_im = im
-            if top1_xy:
-                xs, ys = zip(*top1_xy)
-                ax.scatter(xs, ys, marker="*", s=44,
-                           facecolor="#1b3a6b", edgecolor="white",
-                           linewidths=0.4, zorder=4, label="post-hoc top-1")
+        Z, n_max, y_max, top1_xy, _best, _worst = grids[label]["absolute"]
+        y0, y1 = 0, y_max
+        im = ax.imshow(
+            Z[y0:y1 + 1, 1:n_max + 1],
+            aspect="auto", origin="lower",
+            extent=(0.5, n_max + 0.5, y0 - 0.5, y1 + 0.5),
+            cmap=cmap, norm=LogNorm(vmin=0.5, vmax=max(vmax, 1)),
+        )
+        last_im = im
+        if top1_xy:
+            xs, ys = zip(*top1_xy)
+            ax.scatter(xs, ys, marker="*", s=72,
+                       facecolor="#1b3a6b", edgecolor="white",
+                       linewidths=0.5, zorder=4, label="post-hoc top-1")
 
-            # row-sum marginal: total reads on each y across all N
-            ys = np.arange(y0, y1 + 1)
-            rs = Z[y0:y1 + 1, 1:n_max + 1].sum(axis=1)
-            ax_bar.barh(ys, rs, height=0.85,
-                        color="#7a3a1a", edgecolor="none", alpha=0.85)
-            ax_bar.set_xlim(0, rowsum_max[mode] * 1.05)
-            ax_bar.tick_params(axis="y", left=False, labelleft=False)
-            ax_bar.tick_params(axis="x", labelsize=6, length=2)
-            ax_bar.set_xlabel("$\\Sigma_N$ reads", fontsize=7, labelpad=1)
-            for s in ("top", "right"): ax_bar.spines[s].set_visible(False)
-            ax_bar.grid(True, axis="x", ls=":", lw=0.3,
-                        color="grey", alpha=0.35)
-            ax_bar.set_axisbelow(True)
+        ys = np.arange(y0, y1 + 1)
+        rs = Z[y0:y1 + 1, 1:n_max + 1].sum(axis=1)
+        ax_bar.barh(ys, rs, height=0.85,
+                    color="#7a3a1a", edgecolor="none", alpha=0.85)
+        ax_bar.set_xlim(0, rowsum_max * 1.05)
+        ax_bar.tick_params(axis="y", left=False, labelleft=False)
+        ax_bar.tick_params(axis="x", labelsize=10, length=2.5)
+        ax_bar.set_xlabel(r"$\Sigma_N$ reads", fontsize=11, labelpad=2)
+        for s in ("top", "right"): ax_bar.spines[s].set_visible(False)
+        ax_bar.grid(True, axis="x", ls=":", lw=0.4,
+                    color="grey", alpha=0.4)
+        ax_bar.set_axisbelow(True)
 
-            if row == 0:
-                ax.set_title(f"{panel_letters[col]}. {label}",
-                             fontsize=9.5, pad=4)
-            if col == 0:
-                ylab = ("Recency offset $N-M$\n(1 = most recent prior iter)"
-                        if mode == "recency"
-                        else "Prior iter $M$ (absolute)")
-                ax.set_ylabel(ylab, fontsize=8.5)
-            ax.set_xlabel("Proposer iter $N$", fontsize=8.5)
-            ax.tick_params(axis="both", labelsize=7, length=2)
-            ax.grid(True, ls=":", lw=0.3, color="grey", alpha=0.35)
-            ax.set_axisbelow(True)
-            if mode == "recency":
-                ax.axhspan(0.5, 3.5, color="#5a7fa6", alpha=0.07, zorder=0)
+        ax.set_title(f"{panel_letters[col]}. {label}", fontsize=12.5, pad=6)
+        if col == 0:
+            ax.set_ylabel("Prior iter $M$ (absolute)", fontsize=12)
+        ax.set_xlabel("Proposer iter $N$", fontsize=12)
+        ax.tick_params(axis="both", labelsize=10, length=2.5)
+        ax.grid(True, ls=":", lw=0.4, color="grey", alpha=0.35)
+        ax.set_axisbelow(True)
 
-    # shared colorbar (uses last imshow handle; vmax/cmap shared globally)
-    cbar_ax = fig.add_axes([0.945, 0.15, 0.012, 0.7])
+    cbar_ax = fig.add_axes([0.935, 0.20, 0.011, 0.62])
     cbar = fig.colorbar(last_im, cax=cbar_ax)
     cbar.set_label("Reads on (N, M)  (revisits to same iter dir)",
-                   fontsize=8)
-    cbar.ax.tick_params(labelsize=7)
+                   fontsize=11)
+    cbar.ax.tick_params(labelsize=10)
 
-    # single legend for top-1 marker
     fig.legend(
         handles=[plt.Line2D([0], [0], marker="*", linestyle="",
                             markerfacecolor="#1b3a6b",
-                            markeredgecolor="white", markersize=8,
-                            label="post-hoc top-1 iter at step $N$")],
+                            markeredgecolor="white", markersize=12,
+                            label=r"post-hoc top-1 iter at step $N$")],
         loc="lower center", bbox_to_anchor=(0.5, 0.005),
-        fontsize=7.8, frameon=False,
-    )
-
-    fig.suptitle(
-        "Attention heatmap: baseline reads recent iters shallowly; "
-        "Stage 1 redirects reads to the best iter; "
-        "Stage 2 stacks deeper revisits onto a few iter rows",
-        fontsize=10, y=0.985,
+        fontsize=11, frameon=False,
     )
     fig.savefig("attention_heatmap.pdf", bbox_inches="tight")
     fig.savefig("attention_heatmap.svg", bbox_inches="tight")
