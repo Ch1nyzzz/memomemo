@@ -482,7 +482,207 @@ def fig_read_concentration():
     plt.close(fig)
 
 
+# ============================================================================
+# Figure 3: Attention heatmap (baseline / Stage1 / Stage2)
+# ============================================================================
+# Single representative LoCoMo / claudekimi run per stage. Aggregated via
+# scripts/aggregate_attention.py into attention_data.json (committed alongside
+# this file). Each (N, M) cell counts Read tool calls in proposer iter N
+# whose target was reference_iterations/iter_M/. Top-1 marker uses the
+# earliest-tie-break post-hoc top-1 (earliest iter with the highest
+# candidate-passrate among iter < N).
+ATTENTION_RUNS = [
+    ("Full-context baseline",
+     "locomo_memgpt_claudekimi_default_direction_docker_iter30_train80_20260502_015441"),
+    ("Stage 1: CuraHarness-Iter",
+     "locomo_memgpt_claudekimi_progressive_autobudget_docker_iter30_train80_r1_20260504_162844"),
+    ("Stage 2: CuraHarness-Full",
+     "locomo_memgpt_claudekimi_bandit_v4_autobudget_docker_iter30_train80_w16_r1_20260505_040626"),
+]
+
+
+def _load_attention_data():
+    import json
+    from pathlib import Path
+    p = Path(__file__).with_name("attention_data.json")
+    raw = json.loads(p.read_text())
+    by_short = {}
+    for full_path, payload in raw.items():
+        by_short[Path(full_path).name] = payload
+    return by_short
+
+
+def _build_grid(payload, y_mode):
+    """Return (Z, n_max, y_max, top1_xy, best_xy, worst_xy).
+
+    y_mode='recency': y = N - M (1 = most recent prior iter).
+    y_mode='absolute': y = M (absolute iter index).
+    """
+    import numpy as np
+    n_max = payload["n_max"]
+    y_max = n_max - 1 if y_mode == "recency" else payload["m_max"]
+    Z = np.zeros((y_max + 1, n_max + 1), dtype=float)
+    for c in payload["cells"]:
+        N, M, r = c["N"], c["M"], c["reads"]
+        y = (N - M) if y_mode == "recency" else M
+        if 1 <= N <= n_max and 0 <= y <= y_max:
+            Z[y, N] += r
+    top1_xy = []
+    for N_str, M in payload["top1_per_N"].items():
+        N = int(N_str)
+        if N < 1 or N > n_max: continue
+        y = (N - M) if y_mode == "recency" else M
+        top1_xy.append((N, y))
+    best_xy, worst_xy = [], []
+    for N_str, pol in payload["policy_per_N"].items():
+        N = int(N_str)
+        if N < 1 or N > n_max: continue
+        for M in pol.get("best") or []:
+            y = (N - M) if y_mode == "recency" else M
+            best_xy.append((N, y))
+        wm = pol.get("worst")
+        if wm is not None:
+            y = (N - wm) if y_mode == "recency" else wm
+            worst_xy.append((N, y))
+    return Z, n_max, y_max, top1_xy, best_xy, worst_xy
+
+
+def fig_attention_heatmap():
+    """Three-stage attention heatmap, two y-axis encodings stacked.
+
+    Top row: y = N - M (recency offset; 1 = most recent prior iter).
+    Bottom row: y = M (absolute prior-iter index).
+    Color = number of Read tool calls landing on iter M during step N
+            (= depth of revisit on the same iter dir). log1p scale,
+            shared vmax across all six panels for cross-panel comparison.
+    Filled star = post-hoc top-1 (earliest iter with the highest passrate
+                  among iter < N).
+    Open red square = bandit policy's best_iterations slot (Stage 2 only).
+    """
+    import numpy as np
+    import matplotlib.pyplot as plt
+    from matplotlib.colors import LogNorm
+
+    data = _load_attention_data()
+    grids = {}
+    for label, key in ATTENTION_RUNS:
+        payload = data[key]
+        grids[label] = {
+            "recency":  _build_grid(payload, "recency"),
+            "absolute": _build_grid(payload, "absolute"),
+        }
+
+    # shared colour scale (over both rows + all stages)
+    vmax = max(g["recency"][0].max() for g in grids.values())
+    vmax = max(vmax, max(g["absolute"][0].max() for g in grids.values()))
+
+    # 2 rows x 3 cols of (heatmap + marginal-bar) pairs.
+    # Each "column" of the layout is two sub-columns: heatmap (wide) +
+    # row-sum bar (narrow, sharey with heatmap).
+    fig = plt.figure(figsize=(12.6, 5.6))
+    outer = fig.add_gridspec(
+        2, 3, hspace=0.45, wspace=0.28, left=0.06, right=0.93,
+        top=0.90, bottom=0.10,
+    )
+
+    cmap = plt.get_cmap("YlOrRd").copy()
+    cmap.set_under("#f5f5f5")
+
+    # global y-row-sum max per mode (to normalize marginal bars across stages)
+    rowsum_max = {"recency": 0, "absolute": 0}
+    for label in grids:
+        for mode in ("recency", "absolute"):
+            Z = grids[label][mode][0]
+            rowsum_max[mode] = max(rowsum_max[mode], Z.sum(axis=1).max())
+
+    panel_letters = ["A", "B", "C"]
+    last_im = None
+    for col, (label, _key) in enumerate(ATTENTION_RUNS):
+        for row, mode in enumerate(("recency", "absolute")):
+            inner = outer[row, col].subgridspec(
+                1, 2, width_ratios=[5, 1], wspace=0.05,
+            )
+            ax = fig.add_subplot(inner[0, 0])
+            ax_bar = fig.add_subplot(inner[0, 1], sharey=ax)
+
+            Z, n_max, y_max, top1_xy, _best_xy, _worst_xy = grids[label][mode]
+            if mode == "recency":
+                y0, y1 = 1, min(y_max, n_max - 1)
+            else:
+                y0, y1 = 0, y_max
+            im = ax.imshow(
+                Z[y0:y1 + 1, 1:n_max + 1],
+                aspect="auto", origin="lower",
+                extent=(0.5, n_max + 0.5, y0 - 0.5, y1 + 0.5),
+                cmap=cmap, norm=LogNorm(vmin=0.5, vmax=max(vmax, 1)),
+            )
+            last_im = im
+            if top1_xy:
+                xs, ys = zip(*top1_xy)
+                ax.scatter(xs, ys, marker="*", s=44,
+                           facecolor="#1b3a6b", edgecolor="white",
+                           linewidths=0.4, zorder=4, label="post-hoc top-1")
+
+            # row-sum marginal: total reads on each y across all N
+            ys = np.arange(y0, y1 + 1)
+            rs = Z[y0:y1 + 1, 1:n_max + 1].sum(axis=1)
+            ax_bar.barh(ys, rs, height=0.85,
+                        color="#7a3a1a", edgecolor="none", alpha=0.85)
+            ax_bar.set_xlim(0, rowsum_max[mode] * 1.05)
+            ax_bar.tick_params(axis="y", left=False, labelleft=False)
+            ax_bar.tick_params(axis="x", labelsize=6, length=2)
+            ax_bar.set_xlabel("$\\Sigma_N$ reads", fontsize=7, labelpad=1)
+            for s in ("top", "right"): ax_bar.spines[s].set_visible(False)
+            ax_bar.grid(True, axis="x", ls=":", lw=0.3,
+                        color="grey", alpha=0.35)
+            ax_bar.set_axisbelow(True)
+
+            if row == 0:
+                ax.set_title(f"{panel_letters[col]}. {label}",
+                             fontsize=9.5, pad=4)
+            if col == 0:
+                ylab = ("Recency offset $N-M$\n(1 = most recent prior iter)"
+                        if mode == "recency"
+                        else "Prior iter $M$ (absolute)")
+                ax.set_ylabel(ylab, fontsize=8.5)
+            ax.set_xlabel("Proposer iter $N$", fontsize=8.5)
+            ax.tick_params(axis="both", labelsize=7, length=2)
+            ax.grid(True, ls=":", lw=0.3, color="grey", alpha=0.35)
+            ax.set_axisbelow(True)
+            if mode == "recency":
+                ax.axhspan(0.5, 3.5, color="#5a7fa6", alpha=0.07, zorder=0)
+
+    # shared colorbar (uses last imshow handle; vmax/cmap shared globally)
+    cbar_ax = fig.add_axes([0.945, 0.15, 0.012, 0.7])
+    cbar = fig.colorbar(last_im, cax=cbar_ax)
+    cbar.set_label("Reads on (N, M)  (revisits to same iter dir)",
+                   fontsize=8)
+    cbar.ax.tick_params(labelsize=7)
+
+    # single legend for top-1 marker
+    fig.legend(
+        handles=[plt.Line2D([0], [0], marker="*", linestyle="",
+                            markerfacecolor="#1b3a6b",
+                            markeredgecolor="white", markersize=8,
+                            label="post-hoc top-1 iter at step $N$")],
+        loc="lower center", bbox_to_anchor=(0.5, 0.005),
+        fontsize=7.8, frameon=False,
+    )
+
+    fig.suptitle(
+        "Attention heatmap: baseline reads recent iters shallowly; "
+        "Stage 1 redirects reads to the best iter; "
+        "Stage 2 stacks deeper revisits onto a few iter rows",
+        fontsize=10, y=0.985,
+    )
+    fig.savefig("attention_heatmap.pdf", bbox_inches="tight")
+    fig.savefig("attention_heatmap.svg", bbox_inches="tight")
+    plt.close(fig)
+
+
 if __name__ == "__main__":
     fig_optimization_effect()
     fig_pareto()
-    print("Generated: optimization_effect.{pdf,svg}, pareto_cost_quality.{pdf,svg}")
+    fig_attention_heatmap()
+    print("Generated: optimization_effect.{pdf,svg}, "
+          "pareto_cost_quality.{pdf,svg}, attention_heatmap.{pdf,svg}")
