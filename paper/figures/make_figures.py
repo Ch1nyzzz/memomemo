@@ -749,44 +749,87 @@ def _load_passrates(run_dir):
     return [p[0] for p in pairs], [p[1] for p in pairs]
 
 
+def _load_budgets(run_dir):
+    import json, re
+    from pathlib import Path
+    out = {}
+    for p in sorted(Path(run_dir, "proposer_calls").glob("iter_*/assignment.json")):
+        m = re.search(r"iter_(\d+)", str(p))
+        if not m:
+            continue
+        a = json.loads(p.read_text())
+        b = a.get("budget")
+        if b:
+            out[int(m.group(1))] = b
+    return out
+
+
+BUDGET_COLOR = {
+    "low":    "#cfe3f0",
+    "medium": "#7fa9c7",
+    "high":   "#2c5e88",
+}
+
+
 def fig_optimization_curve():
-    """LoCoMo / codex54: train passrate vs proposer iteration.
+    """LongMemEval / claudekimi: train passrate vs proposer iteration.
 
-    For each policy we pick the best-by-test retained run (matches the
-    rows reported in Table~\\ref{tab:memory_main}). Solid line = best-so-far
-    train passrate (the natural optimization curve); thin line = raw
-    per-iter train passrate.
+    Best-so-far train passrate, one run per policy (best-by-train among
+    retained runs). A budget strip at the top shows the CuraHarness-Full
+    bandit's per-iter budget (low / medium / high).
     """
-    fig, ax = plt.subplots(figsize=(6.4, 3.8))
+    fig, ax = plt.subplots(figsize=(6.6, 4.0))
 
+    final_max = 0.0
     for label, run_dir in OPTCURVE_RUNS:
         iters, raw = _load_passrates(run_dir)
-        best = []
-        cur = -1.0
+        best, cur = [], -1.0
         for v in raw:
             if v > cur:
                 cur = v
             best.append(cur)
         color = OPTCURVE_COLOR[label]
-        ax.plot(iters, raw, color=color, lw=0.8, alpha=0.45, zorder=2)
-        ax.plot(iters, best, color=color, lw=1.8, label=label, zorder=3)
-        ax.scatter([iters[best.index(max(best))]], [max(best)],
-                   marker="o", s=28, color=color, edgecolor="black",
+        ax.plot(iters, best, color=color, lw=2.0, label=label, zorder=3)
+        bi = best.index(max(best))
+        ax.scatter([iters[bi]], [max(best)],
+                   marker="o", s=32, color=color, edgecolor="black",
                    linewidths=0.6, zorder=4)
+        final_max = max(final_max, max(best))
 
-    ax.axvline(0.5, color="grey", lw=0.5, ls=":", alpha=0.6)
-    ax.text(0.5, ax.get_ylim()[1], " proposer iters $\\to$",
-            fontsize=8.0, color="#555555", va="top", ha="left")
+    # Budget strip for the CuraHarness-Full run, drawn just above the curves.
+    bandit_dir = next(rd for lab, rd in OPTCURVE_RUNS if lab == "CuraHarness-Full")
+    budgets = _load_budgets(bandit_dir)
+    strip_y_lo = final_max + 0.04
+    strip_h    = 0.025
+    for it, b in budgets.items():
+        ax.add_patch(Rectangle((it - 0.5, strip_y_lo), 1.0, strip_h,
+                               facecolor=BUDGET_COLOR[b], edgecolor="none",
+                               zorder=5, clip_on=False))
+    ax.text(-0.4, strip_y_lo + strip_h / 2,
+            "CuraHarness-Full\nbudget",
+            fontsize=7.5, color="#444444", va="center", ha="right")
 
+    # Axis frame
     ax.set_xlabel("Proposer iteration", fontsize=11)
-    ax.set_ylabel("Train passrate", fontsize=11)
+    ax.set_ylabel("Train passrate (best-so-far)", fontsize=11)
     ax.set_xlim(-0.5, 30.5)
+    ax.set_ylim(0.10, strip_y_lo + strip_h + 0.01)
     ax.tick_params(axis="both", labelsize=9.5, length=2.5)
     ax.grid(True, ls=":", lw=0.4, color="grey", alpha=0.45)
     ax.set_axisbelow(True)
-    ax.legend(loc="lower right", fontsize=9.5,
+
+    # Two legends: policies (lower right) + budget swatches (upper left).
+    pol_leg = ax.legend(loc="lower right", fontsize=9.5,
+                         frameon=True, framealpha=0.9, edgecolor="0.8",
+                         handletextpad=0.6, labelspacing=0.3, borderpad=0.4)
+    ax.add_artist(pol_leg)
+    budget_handles = [Patch(facecolor=BUDGET_COLOR[b], edgecolor="none",
+                             label=b)
+                      for b in ("low", "medium", "high")]
+    ax.legend(handles=budget_handles, title="budget", loc="upper left",
+              fontsize=8.5, title_fontsize=8.5,
               frameon=True, framealpha=0.9, edgecolor="0.8",
-              handletextpad=0.6, labelspacing=0.3, borderpad=0.4)
+              handletextpad=0.5, labelspacing=0.25, borderpad=0.4)
 
     fig.tight_layout()
     fig.savefig("optimization_curve.pdf", bbox_inches="tight")
