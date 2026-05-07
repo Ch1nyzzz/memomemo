@@ -400,17 +400,17 @@ def fig_pareto_small():
 
     # Per-point absolute-value annotations.
     annot = {
-        "Baseline":    ("Full-context",      (8, -4)),
-        "Progressive": ("CuraHarness-Iter",  (8,  4)),
-        "Bandit":      ("CuraHarness-Full",  (8,  4)),
+        "Baseline":    ("Full-context",      (8, -4),   "top"),
+        "Progressive": ("CuraHarness-Iter",  (8,  4),   "bottom"),
+        "Bandit":      ("CuraHarness-Full",  (-8, -8),  "top"),
     }
-    for policy, (label, offset) in annot.items():
+    for policy, (label, offset, va) in annot.items():
         x, y = pts[policy]
         ha = "left" if offset[0] >= 0 else "right"
         ax.annotate(f"{label}\n\n({x:.2f}M, {y:.3f})",
                     xy=(x, y), xytext=offset,
                     textcoords="offset points",
-                    fontsize=8.5, color="#222222", ha=ha,
+                    fontsize=8.5, color="#222222", ha=ha, va=va,
                     linespacing=1.0)
 
     ax.set_xlim(1.5, 3.65)
