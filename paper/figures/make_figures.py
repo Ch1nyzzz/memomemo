@@ -723,7 +723,7 @@ def fig_attention_heatmap():
 OPTCURVE_RUNS = [
     ("Full-context",
      "/data/home/yuhan/MemoMemo/runs/"
-     "longmemeval_memgpt_claudekimi_default_direction_docker_iter30_train100_20260502_015454"),
+     "longmemeval_memgpt_claudekimi_default_direction_docker_iter30_train100_20260502_152524"),
     ("CuraHarness-Iter",
      "/data/home/yuhan/MemoMemo/runs/"
      "longmemeval_memgpt_claudekimi_progressive_autobudget_docker_iter30_train100_r1_20260504_162844"),
