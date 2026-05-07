@@ -170,154 +170,146 @@ def fig_optimization_effect():
 # ============================================================================
 # Figure 1: Cost--quality shifts as arrows from full-context baseline
 # ============================================================================
-# Shared data table. Each row: bench, proposer, policy, dcost%, dtest_pp,
-# computed against each cell's default-family best-by-test run.
+# Shared data table. Each row: bench, proposer, policy, tokens_M, passrate.
+# All values are absolute (no relative deltas) and align with the bar chart
+# in fig_optimization_effect (best-by-test per cell).
 PARETO_POINTS = [
-    # LoCoMo / claudekimi:  default 3.42M, 0.342
-    ("LoCoMo",       "claudekimi", "Progressive",  -45.6, +3.1),
-    ("LoCoMo",       "claudekimi", "Bandit",       -23.1, +2.0),
-    # LoCoMo / codex54:     default 3.42M, 0.340
-    ("LoCoMo",       "codex54",    "Progressive",  -28.1, +4.8),
-    ("LoCoMo",       "codex54",    "Bandit",       -37.4, +4.7),
-    # LongMemEval / claudekimi: default 3.71M, 0.530
-    ("LongMemEval",  "claudekimi", "Progressive",   -9.2, -1.0),
-    ("LongMemEval",  "claudekimi", "Bandit",       -31.3, +1.5),
-    # LongMemEval / codex54:    default 2.93M, 0.508
-    ("LongMemEval",  "codex54",    "Progressive",   -9.2, +2.0),
-    ("LongMemEval",  "codex54",    "Bandit",       -25.6, -3.5),
-    # SWE-bench Verified / claudekimi: default 3.22M, 0.458 verified
-    ("SWE-bench",    "claudekimi", "Progressive",  +17.4, +16.2),
-    ("SWE-bench",    "claudekimi", "Bandit",        +9.0, +18.2),
+    # LoCoMo / claudekimi
+    ("LoCoMo",       "claudekimi", "Baseline",     3.42, 0.3315),
+    ("LoCoMo",       "claudekimi", "Progressive",  1.86, 0.3545),
+    ("LoCoMo",       "claudekimi", "Bandit",       2.63, 0.3554),
+    # LoCoMo / codex54
+    ("LoCoMo",       "codex54",    "Baseline",     3.42, 0.3308),
+    ("LoCoMo",       "codex54",    "Progressive",  2.46, 0.3738),
+    ("LoCoMo",       "codex54",    "Bandit",       2.14, 0.3554),
+    # LongMemEval / claudekimi
+    ("LongMemEval",  "claudekimi", "Baseline",     3.71, 0.4883),
+    ("LongMemEval",  "claudekimi", "Progressive",  3.37, 0.5050),
+    ("LongMemEval",  "claudekimi", "Bandit",       2.55, 0.5100),
+    # LongMemEval / codex54
+    ("LongMemEval",  "codex54",    "Baseline",     2.93, 0.4867),
+    ("LongMemEval",  "codex54",    "Progressive",  2.66, 0.4992),
+    ("LongMemEval",  "codex54",    "Bandit",       2.18, 0.4625),
+    # SWE-bench Verified / claudekimi
+    ("SWE-bench",    "claudekimi", "Baseline",     3.22, 0.4580),
+    ("SWE-bench",    "claudekimi", "Progressive",  3.78, 0.6200),
+    ("SWE-bench",    "claudekimi", "Bandit",       3.51, 0.6400),
 ]
 
-# Proposer marker (open vs filled head differentiates proposers within a panel)
-PROP_MARKER = {"claudekimi": "o", "codex54": "s"}
-PROP_LABEL  = {"claudekimi": "kimi", "codex54": "codex"}
-POLICY_COLOR = {"Progressive": C_PROGRESSIVE, "Bandit": C_BANDIT}
-POLICY_LABEL = {"Progressive": "Stage 1: CuraHarness-Iter",
+# Color encodes benchmark.
+BENCH_COLOR = {
+    "LoCoMo":      "#CC79A7",   # rose/magenta
+    "LongMemEval": "#009E73",   # green
+    "SWE-bench":   "#E69F00",   # orange
+}
+BENCH_LABEL = {"LoCoMo": "LoCoMo", "LongMemEval": "LongMemEval",
+               "SWE-bench": "SWE-bench"}
+
+# Marker encodes stage (Baseline = X, Progressive = triangle, Bandit = circle).
+POLICY_MARKER = {"Baseline": "X", "Progressive": "^", "Bandit": "o"}
+POLICY_LABEL = {"Baseline":    "Full-context baseline",
+                "Progressive": "Stage 1: CuraHarness-Iter",
                 "Bandit":      "Stage 2: CuraHarness-Full"}
 
-BENCH_TAG = {"LoCoMo": "Lo", "LongMemEval": "LME", "SWE-bench": "SWE"}
+# Proposer encoded by fill (filled = kimi, hollow = codex).
+PROP_LABEL  = {"claudekimi": "kimi", "codex54": "codex"}
 
 
-def _draw_frame(ax, xlim, ylim, show_quadrant_labels=True,
-                pareto_label_pos="top-left"):
-    """Soft upper-left wash + zero axes; only two corner labels."""
-    x0, x1 = xlim
-    y0, y1 = ylim
-    if x0 < 0:
-        ax.add_patch(Rectangle((x0, 0), -x0, y1,
-                               facecolor=C_PAREGION, alpha=0.45,
-                               edgecolor="none", zorder=0))
-    ax.axhline(0, color="grey", lw=0.5, ls="--", alpha=0.55, zorder=1)
-    ax.axvline(0, color="grey", lw=0.5, ls="--", alpha=0.55, zorder=1)
-    # Quadrant labels intentionally omitted.
+def _draw_point(ax, x, y, color, marker, filled=True):
+    """One scatter point. Filled = kimi proposer, hollow = codex proposer."""
+    if filled:
+        ax.scatter(x, y, marker=marker, s=90, color=color,
+                   edgecolor="black", linewidths=0.7, zorder=4)
+    else:
+        ax.scatter(x, y, marker=marker, s=90,
+                   facecolor="white", edgecolor=color,
+                   linewidths=1.6, zorder=4)
 
 
-def _draw_point(ax, dx, dy, color, marker, label=None):
-    """Light grey guide line from origin + the point."""
-    ax.plot([0, dx], [0, dy], color="0.78", lw=0.7, alpha=0.7, zorder=1)
-    ax.scatter(dx, dy, marker=marker, s=85, color=color,
-               edgecolor="black", linewidths=0.6, zorder=4)
-    if label is not None:
-        ax.annotate(label, xy=(dx, dy), xytext=(6, 5),
-                    textcoords="offset points",
-                    fontsize=8.5, color="#333333")
+def _draw_baseline_link(ax, baseline_xy, others_xy, color):
+    """Thin guide lines from the baseline X to the two adapted points."""
+    bx, by = baseline_xy
+    for ox, oy in others_xy:
+        ax.plot([bx, ox], [by, oy], color=color, lw=0.7,
+                alpha=0.45, ls="-", zorder=1)
 
 
-def _draw_origin(ax):
-    ax.scatter(0, 0, marker="X", s=85, color=C_DEFAULT,
-               edgecolor="black", linewidths=0.6, zorder=5)
+def _panel(ax, rows, xlim, ylim, title, show_ylabel):
+    # Group rows by (bench, proposer) so we can draw guide lines from
+    # each baseline to its Progressive / Bandit counterparts.
+    cells = {}
+    for bench, prop, policy, x, y in rows:
+        cells.setdefault((bench, prop), {})[policy] = (x, y)
 
+    for (bench, prop), pts in cells.items():
+        color = BENCH_COLOR[bench]
+        baseline = pts.get("Baseline")
+        others = [pts[p] for p in ("Progressive", "Bandit") if p in pts]
+        if baseline is not None and others:
+            _draw_baseline_link(ax, baseline, others, color)
+        for policy, xy in pts.items():
+            _draw_point(ax, xy[0], xy[1],
+                        color=color,
+                        marker=POLICY_MARKER[policy],
+                        filled=(prop == "claudekimi"))
 
-def _pareto_frontier(points):
-    """Return non-dominated points (upper-left preferred: smaller x, larger y).
-
-    Includes the origin (0, 0) so the frontier is always anchored.
-    """
-    pts = sorted(points + [(0.0, 0.0)], key=lambda p: (p[0], -p[1]))
-    frontier = []
-    best_y = -float("inf")
-    for x, y in pts:
-        if y > best_y:
-            frontier.append((x, y))
-            best_y = y
-    return frontier
-
-
-def _draw_frontier(ax, xy_pairs):
-    front = _pareto_frontier(xy_pairs)
-    if len(front) >= 2:
-        xs = [p[0] for p in front]
-        ys = [p[1] for p in front]
-        ax.plot(xs, ys, color="black", lw=0.9, ls="--",
-                alpha=0.55, zorder=2)
-
-
-def _panel(ax, rows, xlim, ylim, title, show_ylabel,
-           label_each_point=False, draw_frontier=True,
-           frontier_per_bench=True, pareto_label_pos="top-left"):
-    _draw_frame(ax, xlim, ylim, pareto_label_pos=pareto_label_pos)
-    by_cell = {}  # frontier per (bench, proposer) cell
-    for bench, prop, policy, dx, dy in rows:
-        lab = BENCH_TAG[bench] if label_each_point else None
-        _draw_point(ax, dx, dy,
-                    color=POLICY_COLOR[policy],
-                    marker=PROP_MARKER[prop],
-                    label=lab)
-        by_cell.setdefault((bench, prop), []).append((dx, dy))
-    if draw_frontier:
-        for _key, xy in by_cell.items():
-            _draw_frontier(ax, xy)
-    _draw_origin(ax)
     ax.set_xlim(*xlim)
     ax.set_ylim(*ylim)
-    ax.set_xlabel(r"$\Delta$ tokens / propose vs full-context (%)",
-                  fontsize=11)
+    ax.set_xlabel("Tokens per propose (M)", fontsize=11)
     if show_ylabel:
-        ax.set_ylabel(r"$\Delta$ best test passrate (pp)", fontsize=11)
-    ax.set_title(title, fontsize=12, pad=5)
+        ax.set_ylabel("Best test passrate", fontsize=11)
+    if title:
+        ax.set_title(title, fontsize=12, pad=5)
     ax.tick_params(axis="both", which="both", length=3, labelsize=10)
-    ax.grid(True, ls=":", lw=0.4, color="grey", alpha=0.3)
+    ax.grid(True, ls=":", lw=0.4, color="grey", alpha=0.4)
     ax.set_axisbelow(True)
+
+
+def _bench_legend_handles(benches):
+    return [
+        Line2D([0], [0], marker="s", color="w",
+               markerfacecolor=BENCH_COLOR[b], markeredgecolor="black",
+               markersize=9, label=BENCH_LABEL[b])
+        for b in benches
+    ]
 
 
 def _stage_legend_handles():
     return [
-        Line2D([0], [0], marker="o", color="w",
-               markerfacecolor=POLICY_COLOR["Progressive"],
-               markeredgecolor="black", markersize=9,
-               label=POLICY_LABEL["Progressive"]),
-        Line2D([0], [0], marker="o", color="w",
-               markerfacecolor=POLICY_COLOR["Bandit"],
-               markeredgecolor="black", markersize=9,
-               label=POLICY_LABEL["Bandit"]),
+        Line2D([0], [0], marker=POLICY_MARKER["Baseline"], color="w",
+               markerfacecolor="0.4", markeredgecolor="black",
+               markersize=10, label=POLICY_LABEL["Baseline"]),
+        Line2D([0], [0], marker=POLICY_MARKER["Progressive"], color="w",
+               markerfacecolor="0.4", markeredgecolor="black",
+               markersize=10, label=POLICY_LABEL["Progressive"]),
+        Line2D([0], [0], marker=POLICY_MARKER["Bandit"], color="w",
+               markerfacecolor="0.4", markeredgecolor="black",
+               markersize=10, label=POLICY_LABEL["Bandit"]),
     ]
 
 
-def _marker_legend_handles():
-    # Drop the full-context entry: the X at the origin is already self-evident
-    # and removing it keeps the in-axes legend compact enough to avoid
-    # occluding nearby data points.
+def _proposer_legend_handles():
+    # Filled vs hollow circle to mirror the in-figure encoding.
     return [
         Line2D([0], [0], marker="o", color="w",
-               markerfacecolor="lightgrey", markeredgecolor="black",
-               markersize=9, label="kimi"),
-        Line2D([0], [0], marker="s", color="w",
-               markerfacecolor="lightgrey", markeredgecolor="black",
-               markersize=9, label="codex"),
+               markerfacecolor="0.4", markeredgecolor="black",
+               markersize=9, label="kimi (filled)"),
+        Line2D([0], [0], marker="o", color="w",
+               markerfacecolor="white", markeredgecolor="0.2",
+               markeredgewidth=1.4,
+               markersize=9, label="codex (hollow)"),
     ]
 
 
-def _add_in_axes_stage_legend(ax, loc="upper left",
-                              bbox=(0.012, 0.985),
-                              include_marker=True):
-    handles = _stage_legend_handles()
-    if include_marker:
-        handles = handles + _marker_legend_handles()
+def _add_combined_legend(ax, benches, include_proposer=True,
+                         loc="upper left", bbox=(0.012, 0.985)):
+    handles = (_bench_legend_handles(benches)
+               + _stage_legend_handles())
+    if include_proposer:
+        handles = handles + _proposer_legend_handles()
     leg = ax.legend(handles=handles,
                     loc=loc, bbox_to_anchor=bbox,
-                    fontsize=9.5,
+                    fontsize=9.0,
                     frameon=True, framealpha=0.9, edgecolor="0.7",
                     borderaxespad=0,
                     handletextpad=0.6,
@@ -327,7 +319,7 @@ def _add_in_axes_stage_legend(ax, loc="upper left",
 
 
 def fig_pareto_two_panel():
-    """Two-panel Pareto figure: (a) memory benchmarks, (b) SWE-bench."""
+    """Two-panel figure: (a) memory benchmarks, (b) SWE-bench."""
     fig, axes = plt.subplots(1, 2, figsize=(11.5, 4.6),
                              gridspec_kw=dict(width_ratios=[1.25, 1.0]))
 
@@ -335,26 +327,20 @@ def fig_pareto_two_panel():
     swe_rows = [r for r in PARETO_POINTS if r[0] == "SWE-bench"]
 
     _panel(axes[0], mem_rows,
-           xlim=(-55, 6), ylim=(-6, 11),
+           xlim=(1.6, 4.0), ylim=(0.30, 0.56),
            title="(a) Memory benchmarks",
-           show_ylabel=True, label_each_point=True,
-           draw_frontier=True, frontier_per_bench=True,
-           pareto_label_pos="bottom-left")
+           show_ylabel=True)
     _panel(axes[1], swe_rows,
-           xlim=(-4, 24), ylim=(-2, 22),
+           xlim=(3.0, 4.0), ylim=(0.42, 0.68),
            title="(b) SWE-bench Verified",
-           show_ylabel=False, label_each_point=False,
-           draw_frontier=True, frontier_per_bench=True)
+           show_ylabel=False)
 
-    # Memory panel: single combined legend (Stage + Marker) in upper-left.
-    _add_in_axes_stage_legend(axes[0], loc="upper left",
-                              bbox=(0.012, 0.985),
-                              include_marker=True)
-
-    # SWE panel: only kimi proposer, so omit the marker entry.
-    _add_in_axes_stage_legend(axes[1], loc="upper left",
-                              bbox=(0.012, 0.985),
-                              include_marker=False)
+    _add_combined_legend(axes[0], benches=("LoCoMo", "LongMemEval"),
+                         include_proposer=True,
+                         loc="upper left", bbox=(0.012, 0.985))
+    _add_combined_legend(axes[1], benches=("SWE-bench",),
+                         include_proposer=False,
+                         loc="upper left", bbox=(0.012, 0.985))
 
     fig.tight_layout()
     fig.savefig("pareto_cost_quality.pdf", bbox_inches="tight")
@@ -363,20 +349,14 @@ def fig_pareto_two_panel():
 
 
 def fig_pareto_single():
-    """Compact single-panel version (slides / single column).
-
-    Note: frontier is drawn per-benchmark to avoid mixing different
-    benchmarks' passrate scales.
-    """
+    """Compact single-panel version (slides / single column)."""
     fig, ax = plt.subplots(figsize=(8.4, 4.6))
-    xlim = (-55, 24)
-    ylim = (-7, 22)
-    _panel(ax, PARETO_POINTS, xlim=xlim, ylim=ylim,
-           title="", show_ylabel=True,
-           label_each_point=True,
-           draw_frontier=True, frontier_per_bench=True)
-
-    _add_in_axes_stage_legend(ax, include_marker=True)
+    _panel(ax, PARETO_POINTS,
+           xlim=(1.6, 4.0), ylim=(0.30, 0.68),
+           title="", show_ylabel=True)
+    _add_combined_legend(ax, benches=("LoCoMo", "LongMemEval", "SWE-bench"),
+                         include_proposer=True,
+                         loc="upper left", bbox=(0.012, 0.985))
 
     fig.tight_layout()
     fig.savefig("pareto_cost_quality_single.pdf", bbox_inches="tight")
