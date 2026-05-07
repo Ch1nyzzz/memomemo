@@ -364,9 +364,81 @@ def fig_pareto_single():
     plt.close(fig)
 
 
+def fig_pareto_small():
+    """Single-cell Pareto figure: LoCoMo / codex.
+
+    Shows the cleanest Stage 1 / Stage 2 trade-off in our data: both
+    adapted runs strictly dominate the full-context baseline, and Stage 1
+    vs Stage 2 form a real two-point frontier (Stage 2 cheaper, Stage 1
+    higher passrate).
+    """
+    rows = [r for r in PARETO_POINTS
+            if r[0] == "LoCoMo" and r[1] == "codex54"]
+    pts = {policy: (x, y) for _, _, policy, x, y in rows}
+
+    fig, ax = plt.subplots(figsize=(4.4, 3.4))
+
+    color = BENCH_COLOR["LoCoMo"]
+
+    # Pareto frontier line through the two adapted points (Stage 2 then Stage 1
+    # by ascending token cost).
+    front = sorted([pts["Bandit"], pts["Progressive"]], key=lambda p: p[0])
+    ax.plot([p[0] for p in front], [p[1] for p in front],
+            color="black", lw=1.0, ls="--", alpha=0.55, zorder=2)
+
+    # Thin guide lines from baseline to each adapted point.
+    bx, by = pts["Baseline"]
+    for policy in ("Progressive", "Bandit"):
+        ox, oy = pts[policy]
+        ax.plot([bx, ox], [by, oy], color=color, lw=0.7,
+                alpha=0.45, zorder=1)
+
+    for policy, (x, y) in pts.items():
+        ax.scatter(x, y, marker=POLICY_MARKER[policy], s=120,
+                   color=color, edgecolor="black", linewidths=0.8,
+                   zorder=4)
+
+    # Per-point absolute-value annotations.
+    annot = {
+        "Baseline":    ("Full-context",     (8, -4)),
+        "Progressive": ("Stage 1",          (8,  4)),
+        "Bandit":      ("Stage 2",          (-8, -16)),
+    }
+    for policy, (label, offset) in annot.items():
+        x, y = pts[policy]
+        ha = "left" if offset[0] >= 0 else "right"
+        ax.annotate(f"{label}\n({x:.2f}M, {y:.3f})",
+                    xy=(x, y), xytext=offset,
+                    textcoords="offset points",
+                    fontsize=8.5, color="#222222", ha=ha,
+                    linespacing=1.1)
+
+    ax.set_xlim(1.95, 3.65)
+    ax.set_ylim(0.31, 0.395)
+    ax.set_xlabel("Tokens per propose (M)", fontsize=10.5)
+    ax.set_ylabel("Best test passrate", fontsize=10.5)
+    ax.tick_params(axis="both", which="both", length=3, labelsize=9.5)
+    ax.grid(True, ls=":", lw=0.4, color="grey", alpha=0.4)
+    ax.set_axisbelow(True)
+
+    # Compact legend: stage marker shapes only.
+    leg = ax.legend(handles=_stage_legend_handles(),
+                    loc="lower right",
+                    fontsize=8.5,
+                    frameon=True, framealpha=0.9, edgecolor="0.7",
+                    handletextpad=0.6, labelspacing=0.3, borderpad=0.4)
+    leg.set_zorder(6)
+
+    fig.tight_layout()
+    fig.savefig("pareto_small.pdf", bbox_inches="tight")
+    fig.savefig("pareto_small.svg", bbox_inches="tight")
+    plt.close(fig)
+
+
 def fig_pareto():
     fig_pareto_two_panel()
     fig_pareto_single()
+    fig_pareto_small()
 
 
 # ============================================================================
