@@ -211,14 +211,7 @@ def _draw_frame(ax, xlim, ylim, show_quadrant_labels=True,
                                edgecolor="none", zorder=0))
     ax.axhline(0, color="grey", lw=0.5, ls="--", alpha=0.55, zorder=1)
     ax.axvline(0, color="grey", lw=0.5, ls="--", alpha=0.55, zorder=1)
-    if show_quadrant_labels:
-        pad_x = 0.02 * (x1 - x0)
-        pad_y = 0.03 * (y1 - y0)
-        if x0 < 0:
-            ax.text(x0 + pad_x, y1 - pad_y, "Pareto-improving",
-                    ha="left", va="top",
-                    fontsize=13.5, color="#1f5530", style="italic",
-                    weight="bold", alpha=1.0, zorder=5)
+    # Quadrant labels intentionally omitted.
 
 
 def _draw_point(ax, dx, dy, color, marker, label=None):
@@ -317,12 +310,18 @@ def _marker_legend_handles():
 
 
 def _add_in_axes_stage_legend(ax, loc="upper left",
-                              bbox=(0.012, 0.985)):
-    leg = ax.legend(handles=_stage_legend_handles(),
+                              bbox=(0.012, 0.985),
+                              include_marker=True):
+    handles = _stage_legend_handles()
+    if include_marker:
+        handles = handles + _marker_legend_handles()
+    leg = ax.legend(handles=handles,
                     loc=loc, bbox_to_anchor=bbox,
-                    title="Stage", title_fontsize=10, fontsize=9.5,
+                    fontsize=9.5,
                     frameon=True, framealpha=0.9, edgecolor="0.7",
-                    borderaxespad=0)
+                    borderaxespad=0,
+                    handletextpad=0.6,
+                    labelspacing=0.3, borderpad=0.4)
     leg.set_zorder(6)
     ax.add_artist(leg)
 
@@ -347,33 +346,15 @@ def fig_pareto_two_panel():
            show_ylabel=False, label_each_point=False,
            draw_frontier=True, frontier_per_bench=True)
 
-    # Memory panel: stack Stage + Marker legends below the
-    # "Pareto-improving" label in the upper-left. Kept compact so that no
-    # data point is occluded.
-    leg_stage = axes[0].legend(handles=_stage_legend_handles(),
-                               loc="upper left",
-                               bbox_to_anchor=(0.012, 0.88),
-                               title="Stage", title_fontsize=10,
-                               fontsize=9.5, frameon=True, framealpha=0.9,
-                               edgecolor="0.7", borderaxespad=0,
-                               handletextpad=0.6,
-                               labelspacing=0.3, borderpad=0.4)
-    leg_stage.set_zorder(6)
-    axes[0].add_artist(leg_stage)
-    leg_marker = axes[0].legend(handles=_marker_legend_handles(),
-                                loc="upper left",
-                                bbox_to_anchor=(0.012, 0.70),
-                                title="Marker", title_fontsize=10,
-                                fontsize=9.5, frameon=True, framealpha=0.9,
-                                edgecolor="0.7", borderaxespad=0,
-                                handletextpad=0.6,
-                                labelspacing=0.3, borderpad=0.4)
-    leg_marker.set_zorder(6)
-    axes[0].add_artist(leg_marker)
+    # Memory panel: single combined legend (Stage + Marker) in upper-left.
+    _add_in_axes_stage_legend(axes[0], loc="upper left",
+                              bbox=(0.012, 0.985),
+                              include_marker=True)
 
-    # SWE panel: only kimi proposer, so just the Stage legend (lower-right).
-    _add_in_axes_stage_legend(axes[1], loc="lower right",
-                              bbox=(0.985, 0.015))
+    # SWE panel: only kimi proposer, so omit the marker entry.
+    _add_in_axes_stage_legend(axes[1], loc="upper left",
+                              bbox=(0.012, 0.985),
+                              include_marker=False)
 
     fig.tight_layout()
     fig.savefig("pareto_cost_quality.pdf", bbox_inches="tight")
@@ -395,13 +376,9 @@ def fig_pareto_single():
            label_each_point=True,
            draw_frontier=True, frontier_per_bench=True)
 
-    _add_in_axes_stage_legend(ax)
-    ax.legend(handles=_marker_legend_handles(), loc="upper left",
-              bbox_to_anchor=(1.02, 1.0),
-              title="Marker", title_fontsize=10, fontsize=9.5,
-              frameon=False, borderaxespad=0)
+    _add_in_axes_stage_legend(ax, include_marker=True)
 
-    fig.tight_layout(rect=[0, 0, 0.82, 1])
+    fig.tight_layout()
     fig.savefig("pareto_cost_quality_single.pdf", bbox_inches="tight")
     fig.savefig("pareto_cost_quality_single.svg", bbox_inches="tight")
     plt.close(fig)
