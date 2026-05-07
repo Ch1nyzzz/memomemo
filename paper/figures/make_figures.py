@@ -816,18 +816,18 @@ def fig_optimization_curve():
                            s=BUDGET_SIZE[b], color=color,
                            edgecolor="black", linewidths=0.6, zorder=5)
 
-    ax.set_xlabel("Proposer iteration", fontsize=11)
-    ax.set_ylabel("Train passrate (best-so-far)", fontsize=11)
+    ax.set_xlabel("Proposer iteration", fontsize=13)
+    ax.set_ylabel("Train passrate (best-so-far)", fontsize=13)
     ax.set_xlim(-0.5, 30.5)
     ax.set_ylim(0.10, 0.70)
-    ax.tick_params(axis="both", labelsize=9.5, length=2.5)
+    ax.tick_params(axis="both", labelsize=11, length=2.5)
     ax.grid(True, ls=":", lw=0.4, color="grey", alpha=0.45)
     ax.set_axisbelow(True)
 
-    pol_leg = ax.legend(loc="lower right", fontsize=9.5,
-                         frameon=True, framealpha=0.9, edgecolor="0.8",
-                         handletextpad=0.6, labelspacing=0.3, borderpad=0.4)
-    ax.add_artist(pol_leg)
+    policy_handles = [
+        Line2D([0], [0], color=OPTCURVE_COLOR[label], lw=2.0, label=label)
+        for label, _ in OPTCURVE_RUNS
+    ]
     budget_handles = [
         Line2D([0], [0], marker=BUDGET_MARKER["low"], color="w",
                markerfacecolor="0.55", markeredgecolor="black",
@@ -839,8 +839,15 @@ def fig_optimization_curve():
                markerfacecolor="0.55", markeredgecolor="black",
                markersize=8, label="high"),
     ]
+    pol_leg = ax.legend(handles=policy_handles,
+                        loc="lower right", bbox_to_anchor=(0.78, 0.02),
+                        fontsize=9.5, frameon=True, framealpha=0.9,
+                        edgecolor="0.8",
+                        handletextpad=0.6, labelspacing=0.3, borderpad=0.4)
+    ax.add_artist(pol_leg)
     ax.legend(handles=budget_handles, title="budget at breakthrough",
-              loc="upper left", fontsize=8.5, title_fontsize=8.5,
+              loc="lower right", bbox_to_anchor=(1.0, 0.02),
+              fontsize=9.0, title_fontsize=9.0,
               frameon=True, framealpha=0.9, edgecolor="0.8",
               handletextpad=0.5, labelspacing=0.3, borderpad=0.4)
 
