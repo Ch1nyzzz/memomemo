@@ -5,7 +5,7 @@ paper. It was recovered from commit `4ead028`, where it lived in `paper/figures/
 before `paper/` was replaced by the standalone
 [Cura_paper](https://github.com/Ch1nyzzz/Cura_paper) repository.
 
-It stays on the MemoMemo side because it depends on this repo, not on the paper:
+It stays on the code side because it depends on this repo, not on the paper:
 
 - `OPTCURVE_RUNS` reads `candidate_score_table.json` and
   `proposer_calls/iter_*/assignment.json` under absolute `runs/` paths.
@@ -19,7 +19,7 @@ Figures are written to the current working directory, so run it from wherever
 the output should land:
 
 ```bash
-cd paper/figures && python /data/home/yuhan/MemoMemo/scripts/figures/make_figures.py
+cd paper/figures && python /data/home/yuhan/cura_harness/scripts/figures/make_figures.py
 ```
 
 ## Figure name mapping

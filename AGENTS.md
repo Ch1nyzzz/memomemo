@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-MemoMemo is a Python 3.11 `src`-layout package. Core package code lives in
+CuraHarness is a Python 3.11 `src`-layout package. Core package code lives in
 `src/memomemo/`; memory scaffold implementations are under
 `src/memomemo/scaffolds/`, and small helpers live in `src/memomemo/utils/`.
 Tests are in `tests/` and mirror major modules such as `test_optimizer.py`,

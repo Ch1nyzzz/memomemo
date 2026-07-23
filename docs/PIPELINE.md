@@ -1,6 +1,6 @@
-# MemoMemo Optimization Pipeline
+# CuraHarness Optimization Pipeline
 
-This document consolidates, in one place, the MemoMemo proposer/evaluator
+This document consolidates, in one place, the CuraHarness proposer/evaluator
 optimization loop, the three context-selection policies
 (**default / progressive / bandit v3**), and the experimental results
 collected so far. After reading it you should be able to:
@@ -28,7 +28,7 @@ picks its budget / reference iterations / file hints, and ② what state it
 writes back after evaluation. Everything else (workspace assembly, proposer
 invocation, frontier persistence) is identical.
 
-![Shared Skeleton](memomemo_shared_skeleton.svg)
+![Shared Skeleton](curaharness_shared_skeleton.svg)
 
 Every iteration writes all of its artifacts to
 `runs/<run_id>/proposer_calls/iter_NNN/`. The proposer itself runs inside a

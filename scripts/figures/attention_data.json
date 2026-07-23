@@ -1,5 +1,5 @@
 {
- "/data/home/yuhan/MemoMemo/runs/locomo_memgpt_claudekimi_default_direction_docker_iter30_train80_20260502_015441": {
+ "/data/home/yuhan/cura_harness/runs/locomo_memgpt_claudekimi_default_direction_docker_iter30_train80_20260502_015441": {
   "n_max": 30,
   "m_max": 29,
   "cells": [
@@ -1199,7 +1199,7 @@
    }
   }
  },
- "/data/home/yuhan/MemoMemo/runs/locomo_memgpt_claudekimi_progressive_autobudget_docker_iter30_train80_r1_20260504_162844": {
+ "/data/home/yuhan/cura_harness/runs/locomo_memgpt_claudekimi_progressive_autobudget_docker_iter30_train80_r1_20260504_162844": {
   "n_max": 30,
   "m_max": 28,
   "cells": [
@@ -2400,7 +2400,7 @@
    }
   }
  },
- "/data/home/yuhan/MemoMemo/runs/locomo_memgpt_claudekimi_bandit_v4_autobudget_docker_iter30_train80_w16_r1_20260505_040626": {
+ "/data/home/yuhan/cura_harness/runs/locomo_memgpt_claudekimi_bandit_v4_autobudget_docker_iter30_train80_w16_r1_20260505_040626": {
   "n_max": 30,
   "m_max": 29,
   "cells": [

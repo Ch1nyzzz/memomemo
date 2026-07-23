@@ -3,7 +3,7 @@
 All numbers are pulled verbatim from
     docs/EXPERIMENT_INSIGHTS.md
     docs/experiment_detail.md
-of the MemoMemo repo (see paper README for the docs commit pinned).
+of the CuraHarness repo (see paper README for the docs commit pinned).
 
 Two active figures, each defending one experimental claim of Experiments.tex:
 
@@ -722,13 +722,13 @@ def fig_attention_heatmap():
 # scaffold (memgpt_source_top12); iter >= 1 are proposer iterations.
 OPTCURVE_RUNS = [
     ("Full-context",
-     "/data/home/yuhan/MemoMemo/runs/"
+     "/data/home/yuhan/cura_harness/runs/"
      "longmemeval_memgpt_claudekimi_default_direction_docker_iter30_train100_20260502_152524"),
     ("CuraHarness-Iter",
-     "/data/home/yuhan/MemoMemo/runs/"
+     "/data/home/yuhan/cura_harness/runs/"
      "longmemeval_memgpt_claudekimi_progressive_autobudget_docker_iter30_train100_r1_20260504_162844"),
     ("CuraHarness-Full",
-     "/data/home/yuhan/MemoMemo/runs/"
+     "/data/home/yuhan/cura_harness/runs/"
      "longmemeval_memgpt_claudekimi_bandit_v3_banditfix_autobudget_docker_iter30_train100_w16_r1_20260505_003416"),
 ]
 

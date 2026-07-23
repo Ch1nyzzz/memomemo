@@ -1,8 +1,8 @@
-# MemoMemo Progressive Iteration Workspace Plan
+# CuraHarness Progressive Iteration Workspace Plan
 
 ## Goal
 
-Make MemoMemo optimization runs reproducible, inspectable, and comparable by
+Make CuraHarness optimization runs reproducible, inspectable, and comparable by
 turning every iteration into a self-contained artifact bundle and replacing the
 current UCB parent-selection structure with progressive context loading.
 
