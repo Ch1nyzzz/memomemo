@@ -51,3 +51,6 @@ logs/*
 
 # Downloaded reference repositories
 references/vendor/
+
+# Paper is a separate repository (github.com/Ch1nyzzz/Cura_paper, Overleaf-synced)
+paper/
