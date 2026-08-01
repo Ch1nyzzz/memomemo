@@ -1,279 +1,133 @@
-# OptiHarness
+# CuraHarness
 
-OptiHarness is a clean memory-specialized evolution harness. It is separate from
-`skillevolve` and is scoped to LOCOMO conversational-memory QA.
+CuraHarness is a meta-agent optimization harness and the evidence corpus behind an
+ongoing mechanism study of **how LLM meta-agents actually optimize agent scaffolds**.
 
-The first objective axis is `passrate` (maximize). The second objective axis is
-`token_consuming` (minimize). `average_score` is reported as a diagnostic but is
-not optimized because it is strongly coupled to `passrate`. Every run writes a
-Pareto frontier JSON with those fields.
+An LLM proposer (Claude / Kimi / Codex) iteratively rewrites memory-agent scaffolds
+against conversational-memory benchmarks (LOCOMO, LongMemEval), with every
+iteration's workspace, prompt, diff, and evaluation archived for post-hoc analysis.
+The harness exists both to optimize and to *observe the optimizer*: which evidence
+it reads, where its edits land, and what it never touches.
 
-## What Is Included
+## Research findings (the short version)
 
-- LOCOMO importer and deterministic split writer.
-- OpenAI-compatible local model client. Defaults match the local model setup:
-  `/data/home/yuhan/model_zoo/Qwen3-8B` at `http://127.0.0.1:8000/v1`.
-- Built-in memory scaffolds:
-  - `bm25`: lexical retrieval scaffold compatible with `rank_bm25`; falls back to a
-    built-in BM25 implementation when the package is not installed.
-  - `mem0_source`: calls the checked-out mem0 `Memory.from_config/add/search`
-    source.
-  - `memgpt_source`: source-informed MemGPT/Letta seed that reproduces the core
-    memory hierarchy: core memory blocks, recall search, archival search, and
-    context-compaction summaries.
-  - `membank_source`: source-informed MemoryBank/SiliconFriend seed with daily
-    memory docs, deterministic summaries and personality memory, an Ebbinghaus
-    retention score, retrieval reinforcement, and date-grouped memory search.
-- Pareto frontier writer over `passrate` and `token_consuming`.
-- Reference manifest and fetch script for:
-  - https://github.com/dorianbrown/rank_bm25.git
-  - https://github.com/mem0ai/mem0
-  - https://github.com/cpacker/MemGPT
-  - https://github.com/zhongwanjun/MemoryBank-SiliconFriend
+Optimization by meta-agents is bounded on both ends, and the boundary is set by
+what the proposer conditions on — not by permissions or capability:
 
-## Install
+- **Reading is bounded** (accessible ≠ inspected): exposed iteration histories are
+  mostly never opened; replicated across all runs in the frozen analysis set.
+- **Editing is bounded** (editable ≠ edited): edits concentrate on prompts and
+  point fixes; LLM-call topology stays frozen in 15/17 runs; of ~1.7k functions
+  added by proposers, ~1% contain an LLM call.
+- **Defining dimensions as explicit affordances widens exploration**: a controlled
+  bare-vs-afford intervention (2 proposers × 3 domains, 12 runs on a unified
+  substrate) shifts edits into structural dimensions, replicated across proposers.
+
+Where to read more:
+
+| Document | Content |
+|---|---|
+| `docs/AFFORDANCE_INTERVENTION.md` | Intervention experiment: design, 12-run results, held-out scores, unified narrative |
+| `docs/EXPERIMENT_INSIGHTS.md` | Accumulated observations from harness runs |
+| `docs/PIPELINE.md` | How the optimization pipeline works end to end |
+| `analysis/` | Frozen-set measurement scripts and probe outputs |
+| `AGENTS.md` | Operational recipes (docker images, credentials, test evaluation) |
+
+The paper lives in the standalone `Cura_paper` repo; the self-contained
+intervention codebase lives outside this repo (see the intervention doc).
+
+## The harness
+
+`memomemo optimize` runs the loop:
+
+1. iteration 0 evaluates seed scaffolds (or loads precomputed baselines);
+2. the proposer CLI is invoked in a Docker sandbox with a scoped workspace
+   (source snapshot, cumulative summaries, reference iterations);
+3. the proposer writes one candidate plus `pending_eval.json`;
+4. the harness evaluates it and updates `best_candidates.json` / the Pareto
+   frontier over `passrate` (up) and `token_consuming` (down).
+
+Seed scaffold families under `src/memomemo/scaffolds/`: `bm25` (lexical
+baseline), `mem0_source`, `memgpt_source`, `membank_source` (source-informed
+reimplementations of mem0 / MemGPT / MemoryBank). Selection policies include
+fixed-budget, progressive context escalation, and bandit.
+
+Every proposer session archives `meta.json`, `tool_access.json`, and
+`metrics.json` (tokens, cost, per-file read/write counts) — this instrumentation
+is what makes the read/edit-boundary analysis possible.
+
+## Quickstart
 
 ```bash
-cd /data/home/yuhan/OptiHarness
-python -m pip install -e '.[dev]'
+python -m pip install -e '.[dev]'          # add ,source for mem0/MemGPT/MemoryBank deps
+scripts/fetch_reference_repos.sh           # optional upstream reference checkouts
+pytest -q
 ```
 
-Upstream-source integrations:
+Prepare data:
 
 ```bash
-scripts/fetch_reference_repos.sh
-python -m pip install -e '.[dev,source]'
+memomemo locomo prepare                    # add --allow-download without a local cache
+memomemo longmemeval prepare --variant s --allow-download
 ```
 
-The mem0 scaffold is source-backed and requires upstream dependencies plus
-LLM/embedding configuration:
+Smoke test the loop:
 
 ```bash
-optiharness evolve \
-  --split train \
-  --limit 20 \
-  --scaffolds mem0_source \
-  --scaffold-extra-json @configs/source_memory.example.json \
-  --out runs/locomo_memory_source_scaffold_run
-```
-
-For optimization, source scaffolds can be used as seed mechanisms:
-
-```bash
-optiharness optimize \
-  --run-id locomo_memory_source_opt \
-  --iterations 20 \
-  --split train \
-  --scaffolds mem0_source,memgpt_source,membank_source \
-  --scaffold-extra-json @configs/source_memory.example.json \
-  --model /data/home/yuhan/model_zoo/Qwen3-8B \
-  --base-url http://127.0.0.1:8000/v1
-```
-
-## Prepare LOCOMO
-
-The setup can reuse the local SkillEvolve cache if present:
-
-```bash
-optiharness locomo prepare
-```
-
-To allow downloading when no local cache exists:
-
-```bash
-optiharness locomo prepare --allow-download
-```
-
-## Run LongMemEval
-
-LongMemEval uses the same memory-scaffold base as LOCOMO and defaults to
-`memgpt_source`. Scoring follows the official LongMemEval LLM-as-judge
-yes/no check, with Together AI `openai/gpt-oss-120b` as the default judge:
-
-```bash
-export TOGETHER_API_KEY=...
-```
-
-Prepare the cleaned LongMemEval-S file from Hugging Face:
-
-```bash
-optiharness longmemeval prepare --variant s --allow-download
-```
-
-Run a dry-run smoke benchmark:
-
-```bash
-optiharness longmemeval benchmark \
-  --variant s \
-  --limit 3 \
-  --out runs/longmemeval_memory_smoke
-```
-
-Optimize it through the shared MemGPT proposer path:
-
-```bash
-optiharness optimize \
-  --task longmemeval \
-  --longmemeval-variant s \
-  --iterations 20
-```
-
-## Run Initial Memory Frontier
-
-Dry-run retrieval scoring, useful for a quick plumbing check:
-
-```bash
-optiharness evolve \
-  --split train \
-  --limit 20 \
-  --dry-run \
-  --scaffold-extra-json @configs/source_memory.example.json \
-  --out runs/locomo_memory_scaffold_smoke
-```
-
-Full local-model scoring:
-
-```bash
-optiharness evolve \
-  --split train \
-  --scaffold-extra-json @configs/source_memory.example.json \
-  --model /data/home/yuhan/model_zoo/Qwen3-8B \
-  --base-url http://127.0.0.1:8000/v1 \
-  --out runs/locomo_memory_scaffold_run
-```
-
-Key outputs:
-
-- `runs/<run>/candidate_results/*.json`
-- `runs/<run>/best_candidates.json`
-- `runs/<run>/run_summary.json`
-
-## Run Reusable Baselines
-
-Run the built-in `bm25`, `mem0_source`, `memgpt_source`, and
-`membank_source` baselines once across train/test, with three repeated trials
-per split:
-
-```bash
-optiharness baseline \
-  --splits train,test \
-  --repeats 3 \
-  --scaffold-extra-json @configs/source_memory.example.json \
-  --model /data/home/yuhan/model_zoo/Qwen3-8B \
-  --base-url http://127.0.0.1:8000/v1 \
-  --out runs/baselines
-```
-
-The command reuses existing repeat directories by default. Add `--force` when
-you intentionally want to rerun the cached baseline trials.
-
-Key outputs:
-
-- `runs/baselines/baseline_summary.json`
-- `runs/baselines/train/repeat_01/run_summary.json`
-- `runs/baselines/test/repeat_01/run_summary.json`
-- `runs/baselines/<split>/repeat_<NN>/candidate_results/*.json`
-
-## Run Claude Proposer Optimization
-
-This is the real optimization loop. It follows the `skillevolve` /
-`meta-harness` pattern:
-
-1. evaluate built-in scaffold candidates as iteration 0,
-2. call `claude -p` to propose new candidate memory-scaffold code,
-3. require Claude to write `pending_eval.json`,
-4. import and evaluate those candidates,
-5. update `best_candidates.json` by highest `passrate`.
-
-The proposer prompt is aligned with the stricter `meta-harness` discipline:
-each iteration must produce exactly one candidate, start from a clean scoped
-source snapshot, use historical iterations as diagnostic references only, avoid
-parameter-only tuning, and write `pending_eval.json`.
-
-Optimization seeds exactly one default top-k candidate per source scaffold:
-`mem0_source=top30`, `memgpt_source=top12`, and `membank_source=top10`.
-Top-k sweeps remain available for `evolve` and `baseline`, but not for the
-optimizer seed set. The source evolution seed families are `mem0`, `memgpt`,
-and `membank`; `bm25` remains a lexical baseline family.
-
-Small dry-run:
-
-```bash
-optiharness optimize \
-  --run-id smoke_opt \
-  --iterations 1 \
-  --limit 3 \
-  --dry-run \
+memomemo optimize --run-id smoke_opt --iterations 1 --limit 3 --dry-run \
   --scaffold-extra-json @configs/source_memory.example.json
 ```
 
-Full local-model run:
+Real run (Claude proposer, Docker sandbox):
 
 ```bash
-optiharness optimize \
-  --run-id locomo_memory_opt \
-  --iterations 20 \
-  --split train \
+set -a && source .env && set +a
+python -m memomemo.cli optimize --locomo \
+  --run-id locomo_opt --iterations 20 --split train \
   --baseline-dir runs/baselines \
   --scaffold-extra-json @configs/source_memory.example.json \
   --model /data/home/yuhan/model_zoo/Qwen3-8B \
   --base-url http://127.0.0.1:8000/v1 \
-  --claude-model claude-sonnet-4-6
+  --proposer-agent claude --proposer-sandbox docker \
+  --proposer-docker-image docker-claude:latest \
+  --proposer-docker-home /home/yuhan \
+  --proposer-docker-mount /data/home/yuhan/.claude:/home/yuhan/.claude:ro \
+  --proposer-docker-mount /data/home/yuhan/.claude.json:/home/yuhan/.claude.json:ro
 ```
 
-When `--baseline-dir` is set, iteration 0 loads the precomputed baseline
-candidates for the selected split instead of rerunning the selected built-in
-scaffolds. It loads the default top-k candidate for each selected scaffold.
+For the Kimi proposer use `--proposer-agent kimi` with
+`--proposer-docker-image docker-claude-kimi:latest --proposer-docker-home /tmp
+--proposer-docker-env KIMI_API_KEY` (never `docker-claude:latest` for Kimi —
+see `AGENTS.md` for why, plus the held-out test-evaluation recipe via
+`scripts/evaluate_candidate_json.py`).
 
-Claude writes generated candidates and source snapshots under the run output:
+Long jobs should be detached with `setsid ... < /dev/null &` so they survive
+the launching session.
 
-- `runs/<run-id>/generated/`
+## Run artifacts
 
-The harness writes proposer/eval artifacts under:
+Each run directory under `runs/<run-id>/` contains:
 
-- `runs/<run-id>/proposer_calls/iter_<NNN>/`
-- `runs/<run-id>/proposer_calls/iter_<NNN>/workspace/`
-- `runs/<run-id>/proposer_calls/iter_<NNN>/source_snapshot/`
-- `runs/<run-id>/proposer_calls/iter_<NNN>/eval/`
-- `runs/<run-id>/pending_eval.json`
-- `runs/<run-id>/reports/`
-- `runs/<run-id>/candidate_results/`
-- `runs/<run-id>/trace_slices/`
-- `runs/<run-id>/evolution_summary.jsonl`
-- `runs/<run-id>/best_candidates.json`
-- `runs/<run-id>/candidate_score_table.json`
-- `runs/<run-id>/retrieval_diagnostics_summary.json`
-- `runs/<run-id>/iteration_index.json`
-- `runs/<run-id>/diff_summary.jsonl`
-- `runs/<run-id>/progressive_state.json` when adaptive progressive loading is used
+- `evolution_summary.jsonl`, `best_candidates.json`, `candidate_score_table.json`
+- `proposer_calls/iter_<NNN>/{workspace,source_snapshot,eval}/` — the exact
+  material the proposer saw, and what it did with it
+- `generated/` — proposer-written candidate code
+- `reports/`, `candidate_results/`, `trace_slices/`, `iteration_index.json`,
+  `diff_summary.jsonl`
 
-Each Claude proposer session also writes `meta.json`, `tool_access.json`, and
-`metrics.json`. These include input/output/cache tokens, estimated USD cost,
-duration, tool counts, per-file Read counts and line counts, and Write/Edit line
-counts. The optimizer appends the same proposer metrics to
-`evolution_summary.jsonl` as `proposer_result` events and aggregates them in
-`optimizer_summary.json`.
+Treat run outputs as data, not source; they are the raw material for `analysis/`.
 
-Proposer runs use the Docker filesystem sandbox by default. Provide
-`--proposer-docker-image` for the image that contains the selected code-agent
-CLI and any auth/config mounts needed by that agent. Use
-`--proposer-sandbox none` only when intentionally running the proposer directly
-on the host.
+## Repository layout
 
-Default optimization uses the same scoped workspace builder with a fixed high
-context budget. `--selection-policy progressive` starts with low context for
-the first five proposer iterations, then escalates low -> medium -> high on
-passrate stagnation and resets to low after a passrate improvement. Every
-budget sees full cumulative summaries in `workspace/summaries/`; raw
-per-iteration artifacts are copied into `workspace/reference_iterations/`
-according to the current budget. Low and medium trace slices prioritize
-failures that no previous iteration has answered correctly.
-
-## Fetch Reference Repos
-
-The adapters are intentionally clean and local. To inspect the upstream
-reference repositories side-by-side:
-
-```bash
-scripts/fetch_reference_repos.sh
+```
+src/memomemo/        core package (optimizer loop, scaffolds, CLI)
+src/optiharness/     legacy package name kept for compatibility
+scripts/             launch, evaluation, and figure scripts
+configs/             example scaffold/LLM configuration
+analysis/            frozen-set measurements and trajectory probes
+docs/                pipeline docs, experiment insights, intervention results
+paper/               figure sources (paper text moved to Cura_paper repo)
+tests/               pytest suite (`pytest -q`)
+runs/, logs/         run artifacts (not source)
+references/          upstream reference checkouts (vendor/)
 ```
